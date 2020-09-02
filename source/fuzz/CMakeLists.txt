@@ -319,7 +319,7 @@ if(SPIRV_BUILD_FUZZER)
     add_definitions(/MP4)
   endif()
 
-  spvtools_pch(SPIRV_TOOLS_FUZZ_SOURCES pch_source_fuzz)
+  #spvtools_pch(SPIRV_TOOLS_FUZZ_SOURCES pch_source_fuzz)
 
   add_library(SPIRV-Tools-fuzz ${SPIRV_TOOLS_FUZZ_SOURCES})
 
