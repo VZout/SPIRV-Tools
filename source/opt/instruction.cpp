@@ -157,6 +157,18 @@ Instruction* Instruction::Clone(IRContext* c) const {
   return clone;
 }
 
+std::unique_ptr<Instruction> Instruction::CloneSPTR(IRContext* c) const {
+  auto clone = std::make_unique<Instruction>(c);
+  clone->opcode_ = opcode_;
+  clone->has_type_id_ = has_type_id_;
+  clone->has_result_id_ = has_result_id_;
+  clone->unique_id_ = c->TakeNextUniqueId();
+  clone->operands_ = operands_;
+  clone->dbg_line_insts_ = dbg_line_insts_;
+  clone->dbg_scope_ = dbg_scope_;
+  return clone;
+}
+
 uint32_t Instruction::GetSingleWordOperand(uint32_t index) const {
   const auto& words = GetOperand(index).words;
   assert(words.size() == 1 && "expected the operand only taking one word");

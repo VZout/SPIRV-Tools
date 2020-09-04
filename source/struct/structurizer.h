@@ -35,8 +35,6 @@ class Structurizer {
   void Run(const std::vector<uint32_t>& binary_in,
            std::vector<uint32_t>* binary_out);
 
-  std::pair<Block*, std::vector<Block*>> OptFunctionToLooperBlocks(opt::Function& func);
-
  private:
   struct Impl;                  // Opaque struct for holding internal data.
   std::unique_ptr<Impl> impl_;  // Unique pointer to internal data.

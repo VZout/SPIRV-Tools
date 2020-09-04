@@ -19,6 +19,8 @@ if(SPIRV_BUILD_STRUCTURIZER)
 	  structurizer.h
 	  relooper.cpp
 	  relooper.h
+	  preoptimizer.h
+          preoptimizer.cpp
 	  )
 
   if(MSVC AND (NOT ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")))

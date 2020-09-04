@@ -22,6 +22,8 @@
 #include "spirv-tools/libspirv.hpp"
 #include "source/opt/ir_builder.h"
 
+#define NULL_OPERAND opt::Operand(SPV_OPERAND_TYPE_NONE, {})
+
 namespace spvtools {
 namespace opt {
 class Module;
@@ -35,6 +37,8 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
 
 struct Shape;
 struct Block;
+
+using Operand = opt::Operand;
 
 // Info about a branching from one block to another
 struct Branch {
@@ -57,7 +61,7 @@ struct Branch {
   // any expression (or nullptr for the branch taken when no other condition is
   // true) A condition must not have side effects, as the Relooper can reorder
   // or eliminate condition checking. This must not have side effects.
-  opt::Instruction* condition; // VIK-TODO: renamed this from expression to instruction. 
+  Operand condition; // VIK-TODO: renamed this from expression to instruction. 
   // This contains the values for which the branch will be taken, or for the default it is
   // simply not present (empty).
   std::vector<std::size_t> switch_values; // VIK-TODO: Using std::size_t instead of wasm::Index. removed the unique ptr part
@@ -66,7 +70,7 @@ struct Branch {
   // useful for phis.
   opt::BasicBlock* code; // VIK-TODO: wasm::Expression original. Interpreted as instruction
 
-  Branch(opt::Instruction* condition, opt::BasicBlock* code);
+  Branch(Operand condition, opt::BasicBlock* code);
   Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code);
 
   opt::Instruction* Render(RelooperBuilder& builder, opt::IRContext* context, Block* target, bool set_label);
@@ -126,6 +130,12 @@ struct InsertOrderedSet {
     return *this;
   }
 };
+
+  // TODO-VIK: util func
+template <class T, class U>
+static bool contains(const T& container, const U& contained) {
+  return !!container.count(contained);
+}
 
 // like std::map, except that begin() -> end() iterates in the
 // order that elements were added to the map (not in the order
@@ -209,7 +219,7 @@ struct Block {
   opt::BasicBlock* code;
   // If nullptr, then this block ends in ifs (or nothing). otherwise, this block
   // ends in a switch, done on this condition
-  opt::Instruction* switch_condition;
+  Operand switch_condition;
   // If true, we are a multiple entry, so reaching us requires setting the label
   // variable
   bool is_checked_multiple_entry;
@@ -217,7 +227,7 @@ struct Block {
   static Block* FromOptBasicBlock(opt::BasicBlock* block);
 
   Block(opt::BasicBlock* code,
-        opt::Instruction* switch_condition = nullptr);
+        Operand switch_condition = NULL_OPERAND);
   ~Block();
 
   // Add a branch: if the condition holds we branch (or if null, we branch if
@@ -230,7 +240,7 @@ struct Block {
   // continue into the block that happens to be emitted right after it).
   // Internally, adding a branch only adds the outgoing branch. The matching
   // incoming branch on the target is added by the Relooper itself as it works.
-  void AddBranchTo(Block* target, opt::Instruction* condition,
+  void AddBranchTo(Block* target, Operand condition,
                    opt::BasicBlock* code = nullptr);
 
   // Add a switch branch: if the switch condition is one of these values, we
@@ -239,6 +249,8 @@ struct Block {
   // that's what the array and default are for).
   void AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
                          opt::BasicBlock* code = nullptr);
+
+  opt::BasicBlock* Render(RelooperBuilder& builder, opt::IRContext* context);
 };
 
 struct SimpleShape;
@@ -310,6 +322,7 @@ class Relooper {
   Relooper& operator=(Relooper&&) = delete;
 
   void Calculate(Block* entry);
+  std::unique_ptr<opt::Function> Render(RelooperBuilder& builder, opt::Function& old_function, opt::IRContext* new_context);
 
  private:
   opt::IRContext* context;

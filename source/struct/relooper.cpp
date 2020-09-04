@@ -17,14 +17,7 @@
 namespace spvtools {
 namespace struc {
 
-// TODO-VIK: util func
-template <class T, class U>
-static bool contains(const T& container, const U& contained) {
-  return !!container.count(contained);
-}
-
-Relooper::Relooper(opt::Module* module) 
-    : module(module),
+Relooper::Relooper(opt::Module* module) :
     root(nullptr),
     min_size(false),
     block_id_counter(1), // block ID 0 is reserved for clearings
@@ -38,6 +31,20 @@ Relooper::~Relooper() {
   for (auto& shape : shapes) {
     delete shape;
   }
+}
+
+void Relooper::Calculate(Block* entry) {}
+
+std::unique_ptr<opt::Function> Relooper::Render(RelooperBuilder& builder,
+                                                opt::Function& old_function,
+                                                opt::IRContext* new_context) {
+  // Create a new function from existing funciton
+  auto func = std::make_unique<opt::Function>(
+      old_function.DefInst().CloneSPTR(new_context));
+
+  //func->AddBasicBlocks(blocks.begin(), blocks.end(), blocks.begin());
+
+  return nullptr;
 }   
 
 Block* Block::FromOptBasicBlock(opt::BasicBlock* block) 
@@ -45,7 +52,7 @@ Block* Block::FromOptBasicBlock(opt::BasicBlock* block)
     return new Block(block);
 }
 
-Block::Block(opt::BasicBlock* code, opt::Instruction* switch_condition)
+Block::Block(opt::BasicBlock* code, Operand switch_condition)
     : code(code), switch_condition(switch_condition), is_checked_multiple_entry(false) {}
 
 Block::~Block() {
@@ -57,7 +64,7 @@ Block::~Block() {
   }
 }
 
-void Block::AddBranchTo(Block* target, opt::Instruction* condition,
+void Block::AddBranchTo(Block* target, Operand condition,
                         opt::BasicBlock* code) {
   // cannot add more than one branch to the same target
   assert(!contains(branches_out, target));
@@ -71,16 +78,23 @@ void Block::AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
   branches_out[target] = new Branch(std::move(values), code);
 }
 
-Branch::Branch(opt::Instruction* instruction, opt::BasicBlock* code)
-    : condition(instruction), code(code) {}
+opt::BasicBlock* Block::Render(RelooperBuilder& builder, opt::IRContext* context) {
+  auto block = new opt::BasicBlock(builder.NewLabel(context->TakeNextUniqueId()));
+  block->AddInstructions(code);
+  return block;
+}
+
+Branch::Branch(Operand condition, opt::BasicBlock* code)
+    : condition(condition), code(code) {}
 
 Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
-    : condition(nullptr), code(code), switch_values(switch_values) {}
+    : condition(NULL_OPERAND), code(code), switch_values(switch_values) {}
 
 opt::Instruction* Branch::Render(RelooperBuilder& builder,
                                  opt::IRContext* context, Block* target,
     bool set_label)
 {
+
     std::unique_ptr<opt::Instruction> label = nullptr;
     if (set_label) {
       label = builder.NewLabel(target->id);
@@ -88,7 +102,7 @@ opt::Instruction* Branch::Render(RelooperBuilder& builder,
     opt::BasicBlock* ret = new opt::BasicBlock(std::move(label));
 
     if (code) {
-      ret->AddInstruction(std::make_unique<opt::Instruction>(*code));
+      ret->AddInstructions(code);
     }
 
     return nullptr;
@@ -98,7 +112,7 @@ opt::Instruction* Branch::Render(RelooperBuilder& builder,
 std::unique_ptr<opt::Instruction> RelooperBuilder::NewLabel(uint32_t label_id) {
   std::unique_ptr<opt::Instruction> newLabel(
       new opt::Instruction(GetContext(), SpvOpLabel, 0, label_id, {}));
-  return newLabel;
+  return std::move(newLabel);
 }
 
 }  // namespace struc

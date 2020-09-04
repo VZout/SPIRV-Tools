@@ -214,6 +214,8 @@ class Instruction : public utils::IntrusiveNodeBase<Instruction> {
   // one instruction for each result id.
   Instruction* Clone(IRContext* c) const;
 
+  std::unique_ptr<Instruction> CloneSPTR(IRContext* c) const;
+
   IRContext* context() const { return context_; }
 
   SpvOp opcode() const { return opcode_; }

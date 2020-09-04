@@ -258,7 +258,7 @@ inline void BasicBlock::AddInstructions(BasicBlock* bp) {
 }
 
 inline void BasicBlock::PopLastInstruction(IRContext* c) { 
-  auto inst = end()->Clone(ctx);
+  auto inst = end()->Clone(c);
   end().Erase();
 }
 
