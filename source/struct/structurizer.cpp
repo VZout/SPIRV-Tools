@@ -59,11 +59,99 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
   assert(ir_context);
 
 
-  relooper = std::make_unique<Relooper>(ir_context->module());
+  auto relooper = std::make_unique<Relooper>(ir_context->module());
   for (opt::Function& function : *ir_context->module()) {
     // Restructure a function
-    relooper->Calculate(Block::FromOptBasicBlock(function.entry().get()));
+    auto pair = OptFunctionToLooperBlocks(function);
+    relooper->Calculate(pair.first);
+
+    for (auto& block : pair.second) {
+      delete block;
+    }
   }
+}
+
+struct Triage {
+  void BeginBlock();
+  void EndBlock();
+
+  Block* current;
+
+  void TriageInst(opt::Instruction* inst) {
+      // determine whether this instruction is a loop?
+
+    switch (inst->opcode()) {
+      case SpvOp::SpvOpLabel:
+        // pressumably handle a new block?
+      break;
+      case SpvOp::SpvOpBranchConditional:
+        HandleIf();
+        break;
+      case SpvOp::SpvOpSwitch:
+        HandleSwitch();
+        break;
+      case SpvOp::SpvOpBranch:
+          // Handle Break and loop?
+        break;
+      case SpvOp::SpvOpReturn || SpvOp::SpvOpReturnValue:
+        HandleReturn();
+        break;
+      default:
+        break; // Do nothing for default
+    }
+  }
+
+  void TriageBlock(opt::Function& func, opt::BasicBlock* block) {
+    block->ForEachInst(
+        [&](opt::Instruction* inst) {
+          TriageInst(inst);
+        });
+
+    block->ForEachSuccessorLabel([&](std::uint32_t* id) {
+      if (id) {
+        auto it = func.FindBlock(*id);
+        TriageBlock(func, it.Get()->get());
+      }
+    }); 
+  }
+    
+  void OptFunctionToLooperBlocks(opt::Function& func) {
+    TriageBlock(func, func.entry().get());
+  }
+};
+
+std::pair<Block*, std::vector<Block*>> Structurizer::OptFunctionToLooperBlocks(
+    opt::Function& func) {
+
+  std::function<Block*(opt::BasicBlock*)> recursive_node_conversion =
+      [&](opt::BasicBlock* curr) -> Block* {
+    auto new_block = new Block(curr);
+    opt::Instruction* condition = nullptr;
+
+    // is if statement
+    curr->ForEachInst([&](opt::Instruction* inst) { // should just check the end instead
+      if (inst->opcode() == SpvOp::SpvOpBranchConditional) {
+        condition = inst;
+      }
+    });
+
+    curr->ForEachSuccessorLabel([&](std::uint32_t* id) {
+      if (id) {
+        auto it = func.FindBlock(*id);
+        if (it != func.end()) {
+          auto child_block = recursive_node_conversion(it.Get()->get());
+
+          new_block->AddBranchTo(child_block, condition, curr);
+        }
+      }
+    });
+
+    return new_block;
+  };
+
+  recursive_node_conversion(func.entry().get());
+
+  return std::pair<Block*, std::vector<Block*>>();
 }
 
 }  // namespace struc

@@ -71,6 +71,8 @@ class BasicBlock {
   // Appends all of block's instructions (except label) to this block
   inline void AddInstructions(BasicBlock* bp);
 
+  inline void PopLastInstruction(IRContext* c);
+
   // The pointer to the label starting this basic block.
   std::unique_ptr<Instruction>& GetLabel() { return label_; }
 
@@ -253,6 +255,11 @@ inline void BasicBlock::AddInstruction(std::unique_ptr<Instruction> i) {
 inline void BasicBlock::AddInstructions(BasicBlock* bp) {
   auto bEnd = end();
   (void)bEnd.MoveBefore(&bp->insts_);
+}
+
+inline void BasicBlock::PopLastInstruction(IRContext* c) { 
+  auto inst = end()->Clone(ctx);
+  end().Erase();
 }
 
 inline bool BasicBlock::WhileEachInst(
