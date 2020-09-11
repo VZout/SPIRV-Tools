@@ -21,16 +21,16 @@
 namespace spvtools {
 namespace struc {
 
-	class PreOptimizer {
+class PreOptimizer {
  public:
   PreOptimizer(Relooper* parent) : parent(parent) {}
 
-		  BlockSet FindLive(Block* entry);
-		void SplitDeadEnds();
+  BlockSet FindLive(Block* entry);
+  void SplitDeadEnds();
 
  private:
-		Relooper* parent;
-	};
+  Relooper* parent;
+};
 
 }  // namespace struc
 }  // namespace spvtools

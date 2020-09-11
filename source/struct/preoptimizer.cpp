@@ -18,7 +18,6 @@ namespace spvtools {
 namespace struc {
 
 BlockSet PreOptimizer::FindLive(Block* entry) {
-  using BlockList = std::list<Block*>;
   BlockSet live;
   BlockList to_investigate;
 

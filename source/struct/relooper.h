@@ -19,8 +19,9 @@
 #include <memory>
 #include <vector>
 
-#include "spirv-tools/libspirv.hpp"
 #include "source/opt/ir_builder.h"
+#include "source/opt/ir_context.h"
+#include "spirv-tools/libspirv.hpp"
 
 #define NULL_OPERAND opt::Operand(SPV_OPERAND_TYPE_NONE, {})
 
@@ -32,7 +33,28 @@ namespace struc {
 
 class RelooperBuilder : public spvtools::opt::InstructionBuilder {
  public:
+  // Creates an InstructionBuilder, all new instructions will be inserted before
+  // the instruction |insert_before|.
+  RelooperBuilder(opt::IRContext* context, opt::Instruction* insert_before,
+                  opt::IRContext::Analysis preserved_analyses =
+                      opt::IRContext::kAnalysisNone)
+      : InstructionBuilder(context, insert_before, preserved_analyses) {}
+
+  // Creates an InstructionBuilder, all new instructions will be inserted at the
+  // end of the basic block |parent_block|.
+  RelooperBuilder(opt::IRContext* context, opt::BasicBlock* parent_block,
+                  opt::IRContext::Analysis preserved_analyses =
+                      opt::IRContext::kAnalysisNone)
+      : InstructionBuilder(context, parent_block, preserved_analyses) {}
+
   std::unique_ptr<opt::Instruction> NewLabel(uint32_t label_id);
+
+  std::unique_ptr<opt::BasicBlock> MakeNewBlockFromBlock(
+      opt::BasicBlock* block);
+
+  std::unique_ptr<opt::Instruction> MakeCheckLabel(std::size_t value);
+  std::unique_ptr<opt::Instruction> makeSetLabel(std::size_t value);
+  std::unique_ptr<opt::Instruction> makeGetLabel(std::size_t value);
 };
 
 struct Shape;
@@ -61,19 +83,23 @@ struct Branch {
   // any expression (or nullptr for the branch taken when no other condition is
   // true) A condition must not have side effects, as the Relooper can reorder
   // or eliminate condition checking. This must not have side effects.
-  Operand condition; // VIK-TODO: renamed this from expression to instruction. 
-  // This contains the values for which the branch will be taken, or for the default it is
-  // simply not present (empty).
-  std::vector<std::size_t> switch_values; // VIK-TODO: Using std::size_t instead of wasm::Index. removed the unique ptr part
+  Operand condition;  // VIK-TODO: renamed this from expression to instruction.
+  // This contains the values for which the branch will be taken, or for the
+  // default it is simply not present (empty).
+  std::vector<std::size_t>
+      switch_values;  // VIK-TODO: Using std::size_t instead of wasm::Index.
+                      // removed the unique ptr part
 
   // If provided, code that is run right before the branch is taken. This is
   // useful for phis.
-  opt::BasicBlock* code; // VIK-TODO: wasm::Expression original. Interpreted as instruction
+  opt::BasicBlock*
+      code;  // VIK-TODO: wasm::Expression original. Interpreted as instruction
 
   Branch(Operand condition, opt::BasicBlock* code);
   Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code);
 
-  opt::Instruction* Render(RelooperBuilder& builder, opt::IRContext* context, Block* target, bool set_label);
+  opt::Instruction* Render(RelooperBuilder& builder, Block* target,
+                           bool set_label);
 };
 
 // like std::set, except that begin() -> end() iterates in the
@@ -131,7 +157,7 @@ struct InsertOrderedSet {
   }
 };
 
-  // TODO-VIK: util func
+// TODO-VIK: util func
 template <class T, class U>
 static bool contains(const T& container, const U& contained) {
   return !!container.count(contained);
@@ -198,7 +224,11 @@ struct InsertOrderedMap {
 };
 
 using BlockSet = InsertOrderedSet<Block*>;
-using BlockBranchMap  = InsertOrderedMap<Block*, Branch*>;
+using BlockBranchMap = InsertOrderedMap<Block*, Branch*>;
+using BlockBlockSetMap = InsertOrderedMap<Block*, BlockSet>;
+using IdShapeMap = std::map<int, Shape*>;
+using BlockBlockMap = std::map<Block*, Block*>;
+using BlockList = std::list<Block*>;
 
 // Represents a basic block of code - some instructions that end with a
 // control flow modifier (a branch, return or throw).
@@ -226,8 +256,7 @@ struct Block {
 
   static Block* FromOptBasicBlock(opt::BasicBlock* block);
 
-  Block(opt::BasicBlock* code,
-        Operand switch_condition = NULL_OPERAND);
+  Block(opt::BasicBlock* code, Operand switch_condition = NULL_OPERAND);
   ~Block();
 
   // Add a branch: if the condition holds we branch (or if null, we branch if
@@ -250,7 +279,9 @@ struct Block {
   void AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
                          opt::BasicBlock* code = nullptr);
 
-  opt::BasicBlock* Render(RelooperBuilder& builder, opt::IRContext* context);
+  std::unique_ptr<opt::BasicBlock> Render(RelooperBuilder& builder,
+                                          opt::Function* new_func,
+                                          bool in_loop);
 };
 
 struct SimpleShape;
@@ -263,7 +294,8 @@ struct Shape {
   Shape(Type type) : type(type) {}
   virtual ~Shape() = default;
 
-  virtual opt::Instruction* Render(RelooperBuilder& builder, bool in_loop) = 0;
+  virtual opt::BasicBlock* Render(RelooperBuilder& builder,
+                                  opt::Function* new_func, bool in_loop) = 0;
 
   static SimpleShape* IsSimple(Shape* it) {
     return it && it->type == Type::Simple ? (SimpleShape*)it : NULL;
@@ -277,7 +309,7 @@ struct Shape {
 
   // A unique identifier. Used to identify loops, labels are Lx where x is the
   // Id. Defined when added to relooper
-  int id = -1;
+  std::size_t id = -1;
   // The shape that will appear in the code right after this one
   Shape* next = nullptr;
   // The shape that control flow gets to naturally (if there is Next, then this
@@ -288,23 +320,24 @@ struct Shape {
 
 struct SimpleShape : public Shape {
   SimpleShape() : Shape(Type::Simple) {}
-  opt::Instruction* Render(RelooperBuilder& builder, bool in_loop) override;
+  opt::BasicBlock* Render(RelooperBuilder& builder, opt::Function* new_func,
+                          bool in_loop) override;
 
   Block* inner = nullptr;
 };
 
-typedef std::map<int, Shape*> IdShapeMap;
-
 struct MultipleShape : public Shape {
   MultipleShape() : Shape(Type::Multiple) {}
-  opt::Instruction* Render(RelooperBuilder& builder, bool in_loop) override;
+  opt::BasicBlock* Render(RelooperBuilder& builder, opt::Function* new_func,
+                          bool in_loop) override;
 
   IdShapeMap inner_map;  // entry block ID -> shape
 };
 
 struct LoopShape : public Shape {
   LoopShape() : Shape(Type::Loop) {}
-  opt::Instruction* Render(RelooperBuilder& builder, bool in_loop) override;
+  opt::BasicBlock* Render(RelooperBuilder& builder, opt::Function* new_func,
+                          bool in_loop) override;
 
   Shape* inner = nullptr;
   BlockSet entries;  // we must visit at least one of these
@@ -322,17 +355,27 @@ class Relooper {
   Relooper& operator=(Relooper&&) = delete;
 
   void Calculate(Block* entry);
-  std::unique_ptr<opt::Function> Render(RelooperBuilder& builder, opt::Function& old_function, opt::IRContext* new_context);
+  std::unique_ptr<opt::Function> Render(opt::IRContext* new_context,
+                                        opt::Function& old_function);
+
+  template <typename T>
+  T* AddShape() {
+    auto shape = std::make_unique<T>();
+    shape->id = shape_id_counter++;
+    auto* shapePtr = shape.get();
+    shapes.push_back(std::move(shape));
+    return shapePtr;
+  }
 
  private:
   opt::IRContext* context;
   std::deque<Block*> blocks;
-  std::deque<Shape*> shapes;
+  std::deque<std::unique_ptr<Shape>> shapes;
   Shape* root;
   bool min_size;
   std::size_t block_id_counter;
   std::size_t shape_id_counter;
- };
+};
 
 }  // namespace struc
 }  // namespace spvtools

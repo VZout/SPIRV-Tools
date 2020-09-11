@@ -15,6 +15,9 @@
 #include "source/struct/structurizer.h"
 
 #include "source/opt/build_module.h"
+#include "source/opt/iterator.h"
+#include "source/spirv_constant.h"
+#include "source/spirv_target_env.h"
 #include "source/util/make_unique.h"
 
 namespace spvtools {
@@ -98,7 +101,7 @@ struct Triage {
   }
 
   void OptFunctionToLooperBlocks(opt::Function& func) {
-    auto entry_id = func.entry().get()->id();
+    entry_id = func.entry().get()->id();
     CreateBlock(func, func.entry().get());
     CreateBranches();
   }
@@ -146,7 +149,65 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
   auto relooper = std::make_unique<Relooper>(ir_context->module());
 
   // the new ir context
-  auto target_irContext = MakeUnique<opt::IRContext>(impl_->target_env, impl_->consumer);
+  auto target_irContext =
+      MakeUnique<opt::IRContext>(impl_->target_env, impl_->consumer);
+
+  // magic header
+  opt::ModuleHeader header;
+  header.bound = 0;
+  header.generator = SPV_GENERATOR_WORD(SPV_GENERATOR_KHRONOS_ASSEMBLER, 0);
+  header.magic_number = SpvMagicNumber;
+  header.version = spvVersionForTargetEnv(impl_->target_env);
+  header.reserved = 0;
+  target_irContext->module()->SetHeader(header);
+
+  // memory modal
+  target_irContext->SetMemoryModel(
+      ir_context->module()->GetMemoryModel()->CloneSPTR(
+          target_irContext.get()));
+  ir_context->module()->GetMemoryModel()->CloneSPTR(target_irContext.get());
+
+  // types
+  for (auto& ty : ir_context->module()->GetTypes()) {
+    target_irContext->module()->AddType(ty->CloneSPTR(target_irContext.get()));
+  }
+
+  // constants
+  for (auto& constant : ir_context->module()->GetConstants()) {
+    target_irContext->module()->AddType(
+        constant->CloneSPTR(target_irContext.get()));
+  }
+
+  // capabilities
+  for (auto& capability : ir_context->module()->capabilities()) {
+    target_irContext->module()->AddCapability(
+        capability.CloneSPTR(target_irContext.get()));
+  }
+
+  // extensions
+  for (auto& extension : ir_context->module()->extensions()) {
+    target_irContext->module()->AddExtension(
+        extension.CloneSPTR(target_irContext.get()));
+  }
+
+  // execution modes
+  for (auto& mode : ir_context->module()->execution_modes()) {
+    target_irContext->module()->AddExecutionMode(
+        mode.CloneSPTR(target_irContext.get()));
+  }
+
+  // annotations modes
+  for (auto& annotation : ir_context->module()->annotations()) {
+    target_irContext->module()->AddAnnotationInst(
+        annotation.CloneSPTR(target_irContext.get()));
+  }
+
+  // debug1 modes
+  for (auto& inst : opt::make_range(ir_context->module()->debug1_begin(),
+                                    ir_context->module()->debug1_end())) {
+    target_irContext->module()->AddDebug1Inst(
+        inst.CloneSPTR(target_irContext.get()));
+  }
 
   for (opt::Function& function : *ir_context->module()) {
     // Convert the basic blocks into relooper friendly structures.
@@ -156,8 +217,15 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
     // Restructure a function
     relooper->Calculate(tri.GetEntry());
 
-    //relooper->Render(builder,);
+    target_irContext->AddFunction(
+        relooper->Render(target_irContext.get(), function));
   }
+
+  std::vector<uint32_t>* structurized_binary = new std::vector<uint32_t>();
+  target_irContext->module()->ToBinary(structurized_binary,
+                                       /* skip_nop = */ true);
+
+  *binary_out = *structurized_binary;
 }
 
 }  // namespace struc

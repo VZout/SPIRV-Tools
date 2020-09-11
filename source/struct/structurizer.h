@@ -15,9 +15,8 @@
 #ifndef SOURCE_STRUCT_STRUCTURIZER_H_
 #define SOURCE_STRUCT_STRUCTURIZER_H_
 
-#include "spirv-tools/libspirv.hpp"
-
 #include "source/struct/relooper.h"
+#include "spirv-tools/libspirv.hpp"
 
 namespace spvtools {
 namespace struc {
@@ -38,7 +37,7 @@ class Structurizer {
  private:
   struct Impl;                  // Opaque struct for holding internal data.
   std::unique_ptr<Impl> impl_;  // Unique pointer to internal data.
- };
+};
 
 }  // namespace struc
 }  // namespace spvtools

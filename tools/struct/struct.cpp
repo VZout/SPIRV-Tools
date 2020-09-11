@@ -31,14 +31,18 @@
 
 int main(int argc, const char** argv) {
   const std::string source =
-      "         OpCapability Linkage "
-      "         OpCapability Shader "
-      "         OpMemoryModel Logical GLSL450 "
-      "         OpSource GLSL 450 "
-      "         OpDecorate %spec SpecId 1 "
-      "  %int = OpTypeInt 32 1 "
-      " %spec = OpSpecConstant %int 0 "
-      "%const = OpConstant %int 42";
+      "OpCapability Shader "
+      "OpMemoryModel Logical GLSL450 "
+      "OpEntryPoint GLCompute %PSMain \"PSMain\" "
+      "OpExecutionMode %PSMain LocalSize 1 1 1 "
+      "OpSource HLSL 640 "
+      "OpName %PSMain \"PSMain\" "
+      "%void = OpTypeVoid "
+      "%3 = OpTypeFunction %void "
+      "%PSMain = OpFunction %void None %3 "
+      "%4 = OpLabel "
+      "OpReturn "
+      "OpFunctionEnd ";
 
   spvtools::SpirvTools core(SPV_ENV_UNIVERSAL_1_3);
   spvtools::Optimizer opt(SPV_ENV_UNIVERSAL_1_3);
@@ -60,14 +64,15 @@ int main(int argc, const char** argv) {
       new spvtools::struc::Structurizer(SPV_ENV_UNIVERSAL_1_3, &spv_val_options);
   structurizer->Run(spirv, &out_spirv);
 
-  opt.RegisterPass(spvtools::CreateSetSpecConstantDefaultValuePass({{1, "42"}}))
+  /*opt.RegisterPass(spvtools::CreateSetSpecConstantDefaultValuePass({{1, "42"}}))
       .RegisterPass(spvtools::CreateFreezeSpecConstantValuePass())
       .RegisterPass(spvtools::CreateUnifyConstantPass())
       .RegisterPass(spvtools::CreateStripDebugInfoPass());
-  if (!opt.Run(spirv.data(), spirv.size(), &spirv)) return 1;
+  if (!opt.Run(spirv.data(), spirv.size(), &spirv)) return 1;*/
 
   std::string disassembly;
-  if (!core.Disassemble(spirv, &disassembly)) return 1;
+  if (!core.Disassemble(out_spirv, &disassembly)) 
+      return 1;
   std::cout << disassembly << "\n";
 
   return 0;
