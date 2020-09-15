@@ -32,6 +32,17 @@ Relooper::~Relooper() {
   }
 }
 
+// utility
+static opt::Operand::OperandData CreateOperandDataFromU64(std::size_t val) {
+  utils::SmallVector<uint32_t, 2> ret {
+      (std::uint32_t)((val & 0xFFFFFFFF00000000LL) >>
+                      32),                          // lower int_type_id
+      (std::uint32_t)(val & 0xFFFFFFFFLL),  // higher int_type_id
+  };
+
+  return ret;
+}
+
 static std::unique_ptr<opt::BasicBlock> HandleFollowupMultiplies(
     std::unique_ptr<opt::BasicBlock> in, Shape* parent,
     RelooperBuilder& builder, opt::Function* new_func, bool in_loop) {
@@ -266,12 +277,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
   // Create int type. VIK-TODO: Should be optimized away.
   std::size_t int_type_id = GetContext()->TakeNextUniqueId();
   {
-    utils::SmallVector<uint32_t, 2> data_result{
-        (std::uint32_t)((int_type_id & 0xFFFFFFFF00000000LL) >>
-                        32),                          // lower int_type_id
-        (std::uint32_t)(int_type_id & 0xFFFFFFFFLL),  // higher int_type_id
-    };
-
+    auto data_result = CreateOperandDataFromU64(int_type_id);
     std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result)};
 
@@ -284,20 +290,9 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
   // Create constant. VIK-TODO: Should be optimized away.
   std::size_t int_0_constant_id = GetContext()->TakeNextUniqueId();
   {
-    utils::SmallVector<uint32_t, 2> data_param_0{
-        (std::uint32_t)((int_type_id & 0xFFFFFFFF00000000LL) >>
-                        32),                          // lower int_type_id
-        (std::uint32_t)(int_type_id & 0xFFFFFFFFLL),  // higher int_type_id
-    };
-
-        utils::SmallVector<uint32_t, 2> data_param_1{0,  0}; // value
-
-    utils::SmallVector<uint32_t, 2> data_result{
-        (std::uint32_t)((int_0_constant_id & 0xFFFFFFFF00000000LL) >>
-                        32),                          // lower int_type_id
-        (std::uint32_t)(int_0_constant_id &
-                        0xFFFFFFFFLL),  // higher int_type_id
-    };
+    auto data_param_0 = CreateOperandDataFromU64(int_type_id);
+    auto data_param_1 = CreateOperandDataFromU64(0);
+    auto data_result = CreateOperandDataFromU64(int_0_constant_id);
 
     std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
@@ -314,27 +309,10 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
         // Create pointer type. VIK-TODO: Should be optimized away.
   std::size_t int_pointer_constant_id = GetContext()->TakeNextUniqueId();
   {
-
-    utils::SmallVector<uint32_t, 2> data_param_0{
-        (std::uint32_t)((SpvStorageClass::SpvStorageClassFunction & 0xFFFFFFFF00000000LL) >>
-                        32),                          // lower int_type_id
-        (std::uint32_t)(SpvStorageClass::SpvStorageClassFunction &
-                        0xFFFFFFFFLL),  // higher int_type_id
-    };
-
-    utils::SmallVector<uint32_t, 2> data_param_1{
-        (std::uint32_t)((int_type_id & 0xFFFFFFFF00000000LL) >>
-                        32),  // lower int_type_id
-        (std::uint32_t)(int_type_id &
-                        0xFFFFFFFFLL),  // higher int_type_id
-    };
-
-    utils::SmallVector<uint32_t, 2> data_result{
-        (std::uint32_t)((int_pointer_constant_id & 0xFFFFFFFF00000000LL) >>
-                        32),  // lower int_type_id
-        (std::uint32_t)(int_pointer_constant_id &
-                        0xFFFFFFFFLL),  // higher int_type_id
-    };
+    auto data_param_0 =
+        CreateOperandDataFromU64(SpvStorageClass::SpvStorageClassFunction);
+    auto data_param_1 = CreateOperandDataFromU64(int_type_id);
+    auto data_result = CreateOperandDataFromU64(int_pointer_constant_id);
 
         std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
