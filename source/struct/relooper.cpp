@@ -296,7 +296,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
 
     std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
-        opt::Operand(SPV_OPERAND_TYPE_TYPE_ID, data_param_0),
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),
         opt::Operand(SPV_OPERAND_TYPE_LITERAL_INTEGER, data_param_1)
     };
 
@@ -316,8 +316,8 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
 
         std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
-        opt::Operand(SPV_OPERAND_TYPE_TYPE_ID, data_param_0),
-        opt::Operand(SPV_OPERAND_TYPE_TYPE_ID, data_param_1)};
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_1)};
 
     auto new_pointer_int_type = std::make_unique<opt::Instruction>(
         SpvOp::SpvOpTypePointer, true, true, operands);
@@ -325,21 +325,21 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
     GetContext()->AddType(std::move(new_pointer_int_type));
   }
 
-  // ptr
-  utils::SmallVector<uint32_t, 2> data = {0, 0};
-  std::vector<opt::Operand> operands = {
-      opt::Operand(SPV_OPERAND_TYPE_ID, data)};
-
   // storage
-  utils::SmallVector<uint32_t, 2> data = {
-      SpvStorageClass::SpvStorageClassFunction, 0};
+ auto data_param_0 =
+      CreateOperandDataFromU64(int_pointer_constant_id);
+ auto data_param_1 = CreateOperandDataFromU64(SpvStorageClassFunction);
+ auto data_result = CreateOperandDataFromU64(GetContext()->TakeNextUniqueId(););
+
   std::vector<opt::Operand> operands = {
-      opt::Operand(SPV_OPERAND_TYPE_STORAGE_CLASS, data)};
+      opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
+      opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),
+      opt::Operand(SPV_OPERAND_TYPE_STORAGE_CLASS, data_param_1)};
 
   auto inst = std::make_unique<opt::Instruction>(
       GetContext(), SpvOp::SpvOpVariable, true, true, &operands);
 
-  return std::unique_ptr<opt::Instruction>();
+  return inst;
 }
 
 std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeSequence(opt::BasicBlock* lh,
