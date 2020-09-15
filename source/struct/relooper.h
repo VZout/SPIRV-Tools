@@ -55,6 +55,10 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
   std::unique_ptr<opt::Instruction> MakeCheckLabel(std::size_t value);
   std::unique_ptr<opt::Instruction> makeSetLabel(std::size_t value);
   std::unique_ptr<opt::Instruction> makeGetLabel(std::size_t value);
+
+  // blockify, but creates a new block instead of appending the first one.
+  std::unique_ptr<opt::BasicBlock> MakeSequence(opt::BasicBlock* lh,
+                                                opt::BasicBlock* rh);
 };
 
 struct Shape;

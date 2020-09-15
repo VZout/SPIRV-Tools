@@ -226,14 +226,126 @@ std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeNewBlockFromBlock(
   return std::move(retval);
 }
 
-std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(
-    std::size_t value) {
+std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t value) {
   // check whether we have a int type.
   // if not add the int type
   // insert a constant for the label id.
   // insert the pointer type into the function.
   // OpVariable in the basic block.
   // insert a store op to insert value into the constant.
+
+    /*
+    * 
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %PSMain "PSMain"
+               OpExecutionMode %PSMain OriginUpperLeft
+               OpSource HLSL 600
+               OpName %PSMain "PSMain"
+               OpName %src_PSMain "src.PSMain"
+               OpName %bb_entry "bb.entry"
+               OpName %x "x"
+        %int = OpTypeInt 32 1
+      %int_0 = OpConstant %int 0
+       %void = OpTypeVoid
+          %5 = OpTypeFunction %void
+%_ptr_Function_int = OpTypePointer Function %int
+     %PSMain = OpFunction %void None %5
+          %6 = OpLabel
+          %7 = OpFunctionCall %void %src_PSMain
+               OpReturn
+               OpFunctionEnd
+ %src_PSMain = OpFunction %void None %5
+   %bb_entry = OpLabel
+          %x = OpVariable %_ptr_Function_int Function
+               OpStore %x %int_0
+               OpReturn
+               OpFunctionEnd
+    */
+  
+  // Create int type. VIK-TODO: Should be optimized away.
+  std::size_t int_type_id = GetContext()->TakeNextUniqueId();
+  {
+    utils::SmallVector<uint32_t, 2> data_result{
+        (std::uint32_t)((int_type_id & 0xFFFFFFFF00000000LL) >>
+                        32),                          // lower int_type_id
+        (std::uint32_t)(int_type_id & 0xFFFFFFFFLL),  // higher int_type_id
+    };
+
+    std::vector<opt::Operand> operands = {
+        opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result)};
+
+    auto new_int_type = std::make_unique<opt::Instruction>(
+        SpvOp::SpvOpTypeInt, false, true, operands);
+
+    GetContext()->AddType(std::move(new_int_type));
+  }
+
+  // Create constant. VIK-TODO: Should be optimized away.
+  std::size_t int_0_constant_id = GetContext()->TakeNextUniqueId();
+  {
+    utils::SmallVector<uint32_t, 2> data_param_0{
+        (std::uint32_t)((int_type_id & 0xFFFFFFFF00000000LL) >>
+                        32),                          // lower int_type_id
+        (std::uint32_t)(int_type_id & 0xFFFFFFFFLL),  // higher int_type_id
+    };
+
+        utils::SmallVector<uint32_t, 2> data_param_1{0,  0}; // value
+
+    utils::SmallVector<uint32_t, 2> data_result{
+        (std::uint32_t)((int_0_constant_id & 0xFFFFFFFF00000000LL) >>
+                        32),                          // lower int_type_id
+        (std::uint32_t)(int_0_constant_id &
+                        0xFFFFFFFFLL),  // higher int_type_id
+    };
+
+    std::vector<opt::Operand> operands = {
+        opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
+        opt::Operand(SPV_OPERAND_TYPE_TYPE_ID, data_param_0),
+        opt::Operand(SPV_OPERAND_TYPE_LITERAL_INTEGER, data_param_1)
+    };
+
+    auto new_0_const = std::make_unique<opt::Instruction>(
+        SpvOp::SpvOpConstant, true, true, operands);
+
+    GetContext()->AddType(std::move(new_0_const));
+  }
+
+        // Create pointer type. VIK-TODO: Should be optimized away.
+  std::size_t int_pointer_constant_id = GetContext()->TakeNextUniqueId();
+  {
+
+    utils::SmallVector<uint32_t, 2> data_param_0{
+        (std::uint32_t)((SpvStorageClass::SpvStorageClassFunction & 0xFFFFFFFF00000000LL) >>
+                        32),                          // lower int_type_id
+        (std::uint32_t)(SpvStorageClass::SpvStorageClassFunction &
+                        0xFFFFFFFFLL),  // higher int_type_id
+    };
+
+    utils::SmallVector<uint32_t, 2> data_param_1{
+        (std::uint32_t)((int_type_id & 0xFFFFFFFF00000000LL) >>
+                        32),  // lower int_type_id
+        (std::uint32_t)(int_type_id &
+                        0xFFFFFFFFLL),  // higher int_type_id
+    };
+
+    utils::SmallVector<uint32_t, 2> data_result{
+        (std::uint32_t)((int_pointer_constant_id & 0xFFFFFFFF00000000LL) >>
+                        32),  // lower int_type_id
+        (std::uint32_t)(int_pointer_constant_id &
+                        0xFFFFFFFFLL),  // higher int_type_id
+    };
+
+        std::vector<opt::Operand> operands = {
+        opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
+        opt::Operand(SPV_OPERAND_TYPE_TYPE_ID, data_param_0),
+        opt::Operand(SPV_OPERAND_TYPE_TYPE_ID, data_param_1)};
+
+    auto new_pointer_int_type = std::make_unique<opt::Instruction>(
+        SpvOp::SpvOpTypePointer, true, true, operands);
+
+    GetContext()->AddType(std::move(new_pointer_int_type));
+  }
 
   // ptr
   utils::SmallVector<uint32_t, 2> data = {0, 0};
@@ -252,15 +364,23 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(
   return std::unique_ptr<opt::Instruction>();
 }
 
+std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeSequence(opt::BasicBlock* lh,
+                                               opt::BasicBlock* rh) {
+  auto label = NewLabel(GetContext()->TakeNextUniqueId()); // TODO: get a new unique id or reuse previous one?
+  auto ret = std::make_unique<opt::BasicBlock>(std::move(label));
+  ret->AddInstructions(lh);
+  ret->AddInstructions(rh);
+
+  return ret;
+}
+
 opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
                                      opt::Function* new_func, bool in_loop) {
   auto ret = inner->Render(builder, new_func, in_loop);
-  // ret = HandleFollowupMultiplies(std::move(ret), this, builder, new_func,
-  // in_loop);
+   ret = HandleFollowupMultiplies(std::move(ret), this, builder, new_func, in_loop);
   if (next) {
     ret->AddInstructions(next->Render(builder, new_func, in_loop));
-    // ret = builder.makeSequence(ret, next->Render(builder, new_func,
-    // in_loop));
+    ret = builder.MakeSequence(ret.get(), next->Render(builder, new_func, in_loop));
   }
 
   auto ptr = ret.get();
