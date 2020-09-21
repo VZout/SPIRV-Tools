@@ -208,6 +208,7 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
   }
 
   Block* default_target;
+  // Find default target
   for (auto& it : processed_branches_out) {
     if ((switch_condition == NULL_OPERAND &&
          it.second->condition == NULL_OPERAND) ||
@@ -227,7 +228,7 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
 
   // Emit a list of if/else
   if (switch_condition == NULL_OPERAND) {
-    opt::Instruction* current_if;
+    opt::Instruction* curr_if;
     std::vector<std::unique_ptr<opt::Instruction>> finalize_stack;
     opt::BasicBlock* remaining_conditions;
 
@@ -237,7 +238,7 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
       if (it != processed_branches_out.end()) {
         target = it->first;
         if (target == default_target) {
-          continue;
+          continue; // done at the end
         }
         details = it->second;
         assert(details->condition != NULL_OPERAND); // non-default targets always have a condition.
@@ -256,8 +257,59 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
       if (set_curr_label || details->Type != Branch::FlowType::Direct || has_fused_content)
       {
         curr_content = details->Render(builder, target, set_curr_label);
+
+        if (has_fused_content) {
+          curr_content = builder.Blockify(curr_content,
+                                         fused->inner_map.find(target->id)
+                                             ->second->Render(builder, new_func, in_loop));
+        }
+      }
+      // There is nothing to show in this branch, omit the condition
+      if (curr_content) {
+        if (is_default) {
+          std::unique_ptr<opt::Instruction> now;
+          if (remaining_conditions)
+          {
+            now = builder.MakeIf(remaining_conditions, curr_content); // VIK-TODO: This should probably return a basic block instead. or, return instruct and append it here to the curr_content
+            finalize_stack.push_back(now);
+          } else {
+            now = curr_content;
+          }
+          if (!curr_if) {
+            assert(!root);
+            root = now;
+          } else {
+            builder.SetIfFalse(curr_if, now); // VIK-TODO: Make a builder wrapper for this.
+          }
+        } else {
+          auto now = builder.MakeIf(details->condition, curr_content);
+          finalize_stack.push_back(now);
+          if (!curr_if)
+          {
+            assert(!root);
+            root = curr_if = now;
+          } else {
+            builder.SetIfFalse(curr_if, now); // VIK-TODO: use wrapper
+            curr_if = now;
+          }
+        }
+      } else {
+        auto* now = builder.makeunary;  // VIK-TODO: needs wrapper. // this is basicaly if (->a<-)
+        if (remaining_conditions) {
+          remaining_conditions = builder.makebinary(); // VIK-TODO figure out this function. -- this is basically a == b
+        } else {
+          remaining_conditions = now;
+        }
+      }
+      if (is_default) {
+        break;
       }
     }
+
+    // Finalize the if chains.
+    // VIK-TODO: Irrelevant for us.
+    finalize_stack.clear();
+
   }
   // Emit switch
   else {
@@ -311,6 +363,12 @@ std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeNewBlockFromBlock(
   retval->AddInstructions(block);
 
   return std::move(retval);
+}
+
+opt::BasicBlock* RelooperBuilder::Blockify(
+    opt::BasicBlock* lh, opt::BasicBlock* rh) {
+  lh->AddInstructions(rh);
+    return lh;
 }
 
 std::size_t RelooperBuilder::MakeLabelType() {  // Create int type. VIK-TODO:
@@ -499,6 +557,33 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::makeGetLabel() {
 
     return inst;
   }
+}
+
+std::unique_ptr<opt::Instruction> RelooperBuilder::MakeIf(
+    opt::Operand condition, opt::BasicBlock* true_branch,
+    opt::BasicBlock* false_branch) {
+
+    std::vector<opt::Operand> operands = { 
+        condition, // condition
+      opt::Operand(
+          SPV_OPERAND_TYPE_ID, CreateOperandDataFromU64(true_branch->id())),
+    };
+
+    if (false_branch) {
+      operands.push_back(opt::Operand(
+          SPV_OPERAND_TYPE_ID, CreateOperandDataFromU64(false_branch->id())));
+    }
+    auto inst = std::make_unique<opt::Instruction>(GetContext(), SpvOp::SpvOpBranchConditional,
+                                                 true, true, &operands);
+
+  return inst;
+}
+
+void RelooperBuilder::SetIfFalse(
+    opt::Instruction* in, opt::BasicBlock* false_branch) {
+
+    in->AddOperand(opt::Operand(SPV_OPERAND_TYPE_ID,
+                             CreateOperandDataFromU64(false_branch->id())));
 }
 
 std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeSequence(

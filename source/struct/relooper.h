@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// VIK-TODO: BIG ISSUE RIGHT NOW: builder wrapper doesn't work as expected. creating instructions should add them to its parent basic block.
+// block::render finalize stack could be removed.
+
 #ifndef SOURCE_STRUCT_RELOOPER_H_
 #define SOURCE_STRUCT_RELOOPER_H_
 
@@ -51,6 +54,7 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
 
   std::unique_ptr<opt::BasicBlock> MakeNewBlockFromBlock(
       opt::BasicBlock* block);
+  opt::BasicBlock* Blockify(opt::BasicBlock* lh, opt::BasicBlock* rh);
 
   std::size_t MakeLabelType();
   std::size_t MakeBoolType();
@@ -60,6 +64,10 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
   std::unique_ptr<opt::Instruction> MakeCheckLabel(std::size_t value);
   std::unique_ptr<opt::Instruction> makeSetLabel(std::size_t value);
   std::unique_ptr<opt::Instruction> makeGetLabel();
+  // allows creating a conditional branch without a false_branch, this is not allowed in spirv. make sure it always has a false branch with `SetIfFalse`.
+  std::unique_ptr<opt::Instruction> MakeIf(opt::Operand condition, opt::BasicBlock* true_branch, opt::BasicBlock* false_branch = nullptr);
+  void SetIfFalse(
+      opt::Instruction* in, opt::BasicBlock* false_branch);
 
   // blockify, but creates a new block instead of appending the first one.
   std::unique_ptr<opt::BasicBlock> MakeSequence(opt::BasicBlock* lh,
