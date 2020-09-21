@@ -52,13 +52,21 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
   std::unique_ptr<opt::BasicBlock> MakeNewBlockFromBlock(
       opt::BasicBlock* block);
 
+  std::size_t MakeLabelType();
+  std::size_t MakeBoolType();
+  std::size_t MakeLabelPtrType(std::size_t type_id);
+  std::size_t MakeConstant(std::size_t type_id, std::size_t value);
+  std::unique_ptr<opt::Instruction> MakeLabel();
   std::unique_ptr<opt::Instruction> MakeCheckLabel(std::size_t value);
   std::unique_ptr<opt::Instruction> makeSetLabel(std::size_t value);
-  std::unique_ptr<opt::Instruction> makeGetLabel(std::size_t value);
+  std::unique_ptr<opt::Instruction> makeGetLabel();
 
   // blockify, but creates a new block instead of appending the first one.
   std::unique_ptr<opt::BasicBlock> MakeSequence(opt::BasicBlock* lh,
                                                 opt::BasicBlock* rh);
+
+  std::uint32_t label_type_id = std::numeric_limits<std::uint32_t>::max();
+  std::uint32_t label_id = std::numeric_limits<std::uint32_t>::max();
 };
 
 struct Shape;
@@ -102,7 +110,7 @@ struct Branch {
   Branch(Operand condition, opt::BasicBlock* code);
   Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code);
 
-  opt::Instruction* Render(RelooperBuilder& builder, Block* target,
+  opt::BasicBlock* Render(RelooperBuilder& builder, Block* target,
                            bool set_label);
 };
 

@@ -34,9 +34,8 @@ Relooper::~Relooper() {
 
 // utility
 static opt::Operand::OperandData CreateOperandDataFromU64(std::size_t val) {
-  utils::SmallVector<uint32_t, 2> ret {
-      (std::uint32_t)((val & 0xFFFFFFFF00000000LL) >>
-                      32),                          // lower int_type_id
+  utils::SmallVector<uint32_t, 2> ret{
+      (std::uint32_t)((val & 0xFFFFFFFF00000000LL) >> 32),  // lower int_type_id
       (std::uint32_t)(val & 0xFFFFFFFFLL),  // higher int_type_id
   };
 
@@ -185,7 +184,7 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
       builder.NewLabel(builder.GetContext()->TakeNextUniqueId()));
 
   if (is_checked_multiple_entry && in_loop) {
-    // ret->list.push_back(builder.makeSetLabel(0));
+    ret->AddInstruction(builder.makeSetLabel(0)); // VIK-TODO: This is incorrect. Need to make a label first. 
   }
 
   if (code) {
@@ -194,6 +193,74 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
 
   if (!processed_branches_out.size()) {
     return ret;
+  }
+
+  bool set_label = true;
+
+  MultipleShape* fused = Shape::IsMultiple(parent->next);
+  if (fused) {
+    // PrintDebug("Fusing Multiple to Simple\n", 0);
+    parent->next = parent->next->next;
+    if (set_label && fused->inner_map.size() == processed_branches_out.size() &&
+        switch_condition == NULL_OPERAND) {
+      set_label = false;
+    }
+  }
+
+  Block* default_target;
+  for (auto& it : processed_branches_out) {
+    if ((switch_condition == NULL_OPERAND &&
+         it.second->condition == NULL_OPERAND) ||
+        (switch_condition != NULL_OPERAND &&
+         it.second->switch_values.empty())) {
+      assert(!default_target &&
+             "block has branches without a default (nullptr for the "
+             "condition)");  // Must be exactly one default // nullptr
+      default_target = it.first;
+    }
+  }
+
+  // Each block must branch somewhere.
+  assert(default_target);
+
+  opt::BasicBlock* root;
+
+  // Emit a list of if/else
+  if (switch_condition == NULL_OPERAND) {
+    opt::Instruction* current_if;
+    std::vector<std::unique_ptr<opt::Instruction>> finalize_stack;
+    opt::BasicBlock* remaining_conditions;
+
+    for (auto it = processed_branches_out.begin();; it++) {
+      Block* target;
+      Branch* details;
+      if (it != processed_branches_out.end()) {
+        target = it->first;
+        if (target == default_target) {
+          continue;
+        }
+        details = it->second;
+        assert(details->condition != NULL_OPERAND); // non-default targets always have a condition.
+      } else {
+        target = default_target;
+        details = processed_branches_out[default_target];
+      }
+      bool set_curr_label = set_label && target->is_checked_multiple_entry;
+      bool has_fused_content = fused && contains(fused->inner_map, target->id);
+      if (has_fused_content) {
+        assert(details->Type == Branch::FlowType::Break);
+        details->Type = Branch::FlowType::Direct;
+      }
+      opt::BasicBlock* curr_content = nullptr;
+      bool is_default = it == processed_branches_out.end();
+      if (set_curr_label || details->Type != Branch::FlowType::Direct || has_fused_content)
+      {
+        curr_content = details->Render(builder, target, set_curr_label);
+      }
+    }
+  }
+  // Emit switch
+  else {
   }
 
   return ret;
@@ -205,7 +272,7 @@ Branch::Branch(Operand condition, opt::BasicBlock* code)
 Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
     : condition(NULL_OPERAND), code(code), switch_values(switch_values) {}
 
-opt::Instruction* Branch::Render(RelooperBuilder& builder, Block* target,
+opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
                                  bool set_label) {
   std::unique_ptr<opt::Instruction> label = nullptr;
   if (set_label) {
@@ -216,8 +283,17 @@ opt::Instruction* Branch::Render(RelooperBuilder& builder, Block* target,
   if (code) {
     ret->AddInstructions(code);
   }
+  if (set_label) {
+    ret->AddInstruction(std::move(builder.makeSetLabel(target->id)));
+  }
+  if (Type == FlowType::Break)
+  {
+    //builder.makeBreak(); // VIK-TODO: Branch back to merge header?
+  } else if (Type == FlowType::Continue) {
+    // VIK-TODO: make continue shape.
+  }
 
-  return nullptr;
+  return ret;
 }
 
 // TODO-VIK: duplicate
@@ -237,44 +313,8 @@ std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeNewBlockFromBlock(
   return std::move(retval);
 }
 
-std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t value) {
-  // check whether we have a int type.
-  // if not add the int type
-  // insert a constant for the label id.
-  // insert the pointer type into the function.
-  // OpVariable in the basic block.
-  // insert a store op to insert value into the constant.
-
-    /*
-    * 
-               OpCapability Shader
-               OpMemoryModel Logical GLSL450
-               OpEntryPoint Fragment %PSMain "PSMain"
-               OpExecutionMode %PSMain OriginUpperLeft
-               OpSource HLSL 600
-               OpName %PSMain "PSMain"
-               OpName %src_PSMain "src.PSMain"
-               OpName %bb_entry "bb.entry"
-               OpName %x "x"
-        %int = OpTypeInt 32 1
-      %int_0 = OpConstant %int 0
-       %void = OpTypeVoid
-          %5 = OpTypeFunction %void
-%_ptr_Function_int = OpTypePointer Function %int
-     %PSMain = OpFunction %void None %5
-          %6 = OpLabel
-          %7 = OpFunctionCall %void %src_PSMain
-               OpReturn
-               OpFunctionEnd
- %src_PSMain = OpFunction %void None %5
-   %bb_entry = OpLabel
-          %x = OpVariable %_ptr_Function_int Function
-               OpStore %x %int_0
-               OpReturn
-               OpFunctionEnd
-    */
-  
-  // Create int type. VIK-TODO: Should be optimized away.
+std::size_t RelooperBuilder::MakeLabelType() {  // Create int type. VIK-TODO:
+                                                // Should be optimized away.
   std::size_t int_type_id = GetContext()->TakeNextUniqueId();
   {
     auto data_result = CreateOperandDataFromU64(int_type_id);
@@ -287,34 +327,35 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
     GetContext()->AddType(std::move(new_int_type));
   }
 
-  // Create constant. VIK-TODO: Should be optimized away.
-  std::size_t int_0_constant_id = GetContext()->TakeNextUniqueId();
+  return int_type_id;
+}
+
+std::size_t RelooperBuilder::MakeBoolType() {
+  std::size_t type_id = GetContext()->TakeNextUniqueId();
   {
-    auto data_param_0 = CreateOperandDataFromU64(int_type_id);
-    auto data_param_1 = CreateOperandDataFromU64(0);
-    auto data_result = CreateOperandDataFromU64(int_0_constant_id);
-
+    auto data_result = CreateOperandDataFromU64(type_id);
     std::vector<opt::Operand> operands = {
-        opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
-        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),
-        opt::Operand(SPV_OPERAND_TYPE_LITERAL_INTEGER, data_param_1)
-    };
+        opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result)};
 
-    auto new_0_const = std::make_unique<opt::Instruction>(
-        SpvOp::SpvOpConstant, true, true, operands);
+    auto new_int_type = std::make_unique<opt::Instruction>(
+        SpvOp::SpvOpTypeBool, false, true, operands);
 
-    GetContext()->AddType(std::move(new_0_const));
+    GetContext()->AddType(std::move(new_int_type));
   }
 
-        // Create pointer type. VIK-TODO: Should be optimized away.
-  std::size_t int_pointer_constant_id = GetContext()->TakeNextUniqueId();
+  return type_id;
+}
+
+std::size_t RelooperBuilder::MakeLabelPtrType(std::size_t type_id) {
+  // Create pointer type. VIK-TODO: Should be optimized away.
+  std::size_t ptr_type_id = GetContext()->TakeNextUniqueId();
   {
     auto data_param_0 =
         CreateOperandDataFromU64(SpvStorageClass::SpvStorageClassFunction);
-    auto data_param_1 = CreateOperandDataFromU64(int_type_id);
-    auto data_result = CreateOperandDataFromU64(int_pointer_constant_id);
+    auto data_param_1 = CreateOperandDataFromU64(type_id);
+    auto data_result = CreateOperandDataFromU64(ptr_type_id);
 
-        std::vector<opt::Operand> operands = {
+    std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
         opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),
         opt::Operand(SPV_OPERAND_TYPE_ID, data_param_1)};
@@ -325,11 +366,44 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
     GetContext()->AddType(std::move(new_pointer_int_type));
   }
 
-  // storage
- auto data_param_0 =
-      CreateOperandDataFromU64(int_pointer_constant_id);
- auto data_param_1 = CreateOperandDataFromU64(SpvStorageClassFunction);
- auto data_result = CreateOperandDataFromU64(GetContext()->TakeNextUniqueId(););
+  return ptr_type_id;
+}
+
+std::size_t RelooperBuilder::MakeConstant(std::size_t type_id,
+                                          std::size_t value) {
+  // Create constant. VIK-TODO: Should be optimized away.
+  std::size_t int_0_constant_id = GetContext()->TakeNextUniqueId();
+  {
+    auto data_param_0 = CreateOperandDataFromU64(type_id);
+    auto data_param_1 = CreateOperandDataFromU64(value);
+    auto data_result = CreateOperandDataFromU64(int_0_constant_id);
+
+    std::vector<opt::Operand> operands = {
+        opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),
+        opt::Operand(SPV_OPERAND_TYPE_LITERAL_INTEGER, data_param_1)};
+
+    auto new_0_const = std::make_unique<opt::Instruction>(SpvOp::SpvOpConstant,
+                                                          true, true, operands);
+
+    GetContext()->AddType(std::move(new_0_const));
+  }
+
+  return int_0_constant_id;
+}
+
+std::unique_ptr<opt::Instruction> RelooperBuilder::MakeLabel() {
+  if (label_id != std::numeric_limits<std::uint32_t>::max()) {
+    throw std::runtime_error("Uh. looks like we already have a label. Abort!");
+  }
+
+  auto label_type_id = MakeLabelType();
+  auto ptr_type_id = MakeLabelPtrType(label_type_id);
+
+  // create the variable parameter
+  auto data_param_0 = CreateOperandDataFromU64(ptr_type_id);
+  auto data_param_1 = CreateOperandDataFromU64(SpvStorageClassFunction);
+  auto data_result = CreateOperandDataFromU64(GetContext()->TakeNextUniqueId());
 
   std::vector<opt::Operand> operands = {
       opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
@@ -339,12 +413,99 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(std::size_t va
   auto inst = std::make_unique<opt::Instruction>(
       GetContext(), SpvOp::SpvOpVariable, true, true, &operands);
 
+  this->label_id = inst->result_id();
+
+  makeSetLabel(0); // VIK-TODO: This instruction gets discarded!!! fixme plz
+
   return inst;
 }
 
-std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeSequence(opt::BasicBlock* lh,
-                                               opt::BasicBlock* rh) {
-  auto label = NewLabel(GetContext()->TakeNextUniqueId()); // TODO: get a new unique id or reuse previous one?
+std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(
+    std::size_t value) {
+  if (label_id == std::numeric_limits<std::uint32_t>::max()) {
+    throw std::runtime_error("There is no label here");
+  }
+
+  label_type_id = MakeLabelType();
+  auto bool_type_id = MakeBoolType();
+  auto value_const_id = MakeConstant(label_type_id, value);
+  auto get_id = makeGetLabel()->result_id(); // VIK-TODO: We require to emit this!!!!
+
+  // create the variable parameter
+  {
+    auto data_param_0 = CreateOperandDataFromU64(bool_type_id);
+    auto data_param_1 = CreateOperandDataFromU64(get_id);
+    auto data_param_2 = CreateOperandDataFromU64(value_const_id);
+    auto data_result =
+        CreateOperandDataFromU64(GetContext()->TakeNextUniqueId());
+
+    std::vector<opt::Operand> operands = {
+        opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),   // bool type id
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_1),   // left hand id
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_2)};  // right hand id
+
+    auto inst = std::make_unique<opt::Instruction>(
+        GetContext(), SpvOp::SpvOpIEqual, true, true, &operands);
+
+    return inst;
+  }
+}
+
+std::unique_ptr<opt::Instruction> RelooperBuilder::makeSetLabel(
+    std::size_t value) {
+
+    auto const_id = MakeConstant(label_type_id, value);
+
+      // create the store op
+    {
+      auto data_param_0 = CreateOperandDataFromU64(label_id);
+      auto data_param_1 = CreateOperandDataFromU64(const_id);
+      auto data_result =
+          CreateOperandDataFromU64(GetContext()->TakeNextUniqueId());
+
+      std::vector<opt::Operand> operands = {
+          opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
+          opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),   // target
+          opt::Operand(SPV_OPERAND_TYPE_ID, data_param_1)};  // constant
+
+      auto inst = std::make_unique<opt::Instruction>(
+          GetContext(), SpvOp::SpvOpStore, true, true, &operands);
+
+      return inst;
+    }
+
+  return std::unique_ptr<opt::Instruction>();
+}
+
+std::unique_ptr<opt::Instruction> RelooperBuilder::makeGetLabel() {
+
+
+    // op load
+  // create the variable parameter
+  {
+    auto data_param_0 = CreateOperandDataFromU64(label_type_id);
+    auto data_param_1 = CreateOperandDataFromU64(label_id);
+    auto data_result =
+        CreateOperandDataFromU64(GetContext()->TakeNextUniqueId());
+
+    std::vector<opt::Operand> operands = {
+        opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_0),   // type id
+        opt::Operand(SPV_OPERAND_TYPE_ID, data_param_1)};  // var to load
+
+    auto inst = std::make_unique<opt::Instruction>(
+        GetContext(), SpvOp::SpvOpLoad, true, true, &operands);
+
+    return inst;
+  }
+}
+
+std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeSequence(
+    opt::BasicBlock* lh, opt::BasicBlock* rh) {
+  auto label =
+      NewLabel(GetContext()->TakeNextUniqueId());  // TODO: get a new unique id
+                                                   // or reuse previous one?
   auto ret = std::make_unique<opt::BasicBlock>(std::move(label));
   ret->AddInstructions(lh);
   ret->AddInstructions(rh);
@@ -355,10 +516,12 @@ std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeSequence(opt::BasicBlock* 
 opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
                                      opt::Function* new_func, bool in_loop) {
   auto ret = inner->Render(builder, new_func, in_loop);
-   ret = HandleFollowupMultiplies(std::move(ret), this, builder, new_func, in_loop);
+  ret = HandleFollowupMultiplies(std::move(ret), this, builder, new_func,
+                                 in_loop);
   if (next) {
     ret->AddInstructions(next->Render(builder, new_func, in_loop));
-    ret = builder.MakeSequence(ret.get(), next->Render(builder, new_func, in_loop));
+    ret = builder.MakeSequence(ret.get(),
+                               next->Render(builder, new_func, in_loop));
   }
 
   auto ptr = ret.get();

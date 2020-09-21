@@ -67,6 +67,7 @@ Shape* Analyzer::MakeSimple(BlockSet& blocks, Block* inner,
   return Simple;
 }
 
+// loop is going to be problematic. ill likely have to inject extra blocks into this myself.
 Shape* Analyzer::MakeLoop(BlockSet& blocks, BlockSet& entries,
                           BlockSet& next_entries) {
   // Find the inner blocks in this loop. Proceed backwards from the entries
