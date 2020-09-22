@@ -53,8 +53,8 @@ struct Triage {
   }
 
   void CreateBranches() {
-    for (auto const& id_block_pair : block_list) {
-      auto block = id_block_pair.second;
+    for (auto& id_block_pair : block_list) {
+      auto& block = id_block_pair.second;
       auto tail = block->code->tail();
       if (block->switch_condition != NULL_OPERAND) {  // switch statement
         auto num_operands = tail->NumOperands();

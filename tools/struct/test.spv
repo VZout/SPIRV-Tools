@@ -1,0 +1,56 @@
+; SPIR-V
+; Version: 1.0
+; Generator: Google spiregg; 0
+; Bound: 26
+; Schema: 0
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %PSMain "PSMain"
+               OpExecutionMode %PSMain LocalSize 1 1 1
+               OpSource HLSL 600
+               OpName %PSMain "PSMain"
+               OpName %src_PSMain "src.PSMain"
+               OpName %bb_entry "bb.entry"
+               OpName %q "q"
+               OpName %param_var_x "param.var.x"
+               OpName %bla "bla"
+               OpName %x "x"
+               OpName %bb_entry_0 "bb.entry"
+               OpName %if_true "if.true"
+               OpName %if_merge "if.merge"
+        %int = OpTypeInt 32 1
+      %int_2 = OpConstant %int 2
+      %int_0 = OpConstant %int 0
+     %int_69 = OpConstant %int 69
+     %int_42 = OpConstant %int 42
+       %void = OpTypeVoid
+          %8 = OpTypeFunction %void
+%_ptr_Function_int = OpTypePointer Function %int
+         %18 = OpTypeFunction %int %_ptr_Function_int
+       %bool = OpTypeBool
+     %PSMain = OpFunction %void None %8
+          %9 = OpLabel
+         %10 = OpFunctionCall %void %src_PSMain
+               OpReturn
+               OpFunctionEnd
+ %src_PSMain = OpFunction %void None %8
+   %bb_entry = OpLabel
+          %q = OpVariable %_ptr_Function_int Function
+%param_var_x = OpVariable %_ptr_Function_int Function
+               OpStore %param_var_x %int_2
+         %16 = OpFunctionCall %int %bla %param_var_x
+               OpStore %q %16
+               OpReturn
+               OpFunctionEnd
+        %bla = OpFunction %int None %18
+          %x = OpFunctionParameter %_ptr_Function_int
+ %bb_entry_0 = OpLabel
+         %21 = OpLoad %int %x
+         %23 = OpINotEqual %bool %21 %int_0
+               OpSelectionMerge %if_merge None
+               OpBranchConditional %23 %if_true %if_merge
+    %if_true = OpLabel
+               OpReturnValue %int_69
+   %if_merge = OpLabel
+               OpReturnValue %int_42
+               OpFunctionEnd

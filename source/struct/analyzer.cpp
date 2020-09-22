@@ -44,7 +44,7 @@ void Analyzer::Solipsize(Block* target, Branch::FlowType type, Shape* ancestor,
     target->branches_in.erase(Prior);
     target->processed_branches_in.insert(Prior);
     Prior->branches_out.erase(target);
-    Prior->branches_out[target] = PriorOut;
+    Prior->processed_branches_out[target] = PriorOut;
     // PrintDebug("  eliminated branch from %d\n", Prior->Id);
   }
 }

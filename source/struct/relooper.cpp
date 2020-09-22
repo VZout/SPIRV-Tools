@@ -103,6 +103,14 @@ void Relooper::Calculate(Block* entry) {
   auto pre_optimizer = PreOptimizer(this);
   auto live = pre_optimizer.FindLive(entry);
 
+  auto recursive_explode = [&](Block* b) {
+    for (auto c : b->branches_out) {
+      blocks.emplace_back(c.first);
+    }
+  };
+  blocks.emplace_back(entry);
+  recursive_explode(entry);
+
   // Add incoming branches from live blocks, ignoring dead code
   for (unsigned i = 0; i < blocks.size(); i++) {
     Block* curr = blocks[i];

@@ -30,7 +30,7 @@
 #include "source/opt/log.h"
 
 int main(int argc, const char** argv) {
-  const std::string source =
+  /*const std::string source =
       "OpCapability Shader "
       "OpMemoryModel Logical GLSL450 "
       "OpEntryPoint GLCompute %PSMain \"PSMain\" "
@@ -42,7 +42,12 @@ int main(int argc, const char** argv) {
       "%PSMain = OpFunction %void None %3 "
       "%4 = OpLabel "
       "OpReturn "
-      "OpFunctionEnd ";
+      "OpFunctionEnd ";*/
+
+  std::ifstream ifs("test.spv");
+  std::string source((std::istreambuf_iterator<char>(ifs)),
+                      (std::istreambuf_iterator<char>()));
+
 
   spvtools::SpirvTools core(SPV_ENV_UNIVERSAL_1_3);
   spvtools::Optimizer opt(SPV_ENV_UNIVERSAL_1_3);
