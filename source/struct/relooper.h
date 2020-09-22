@@ -26,6 +26,11 @@
 #include "source/opt/ir_context.h"
 #include "spirv-tools/libspirv.hpp"
 
+// fucky hack to get the last result id
+#define BB_INTO_OPERAND(bb) \
+  opt::Operand(SPV_OPERAND_TYPE_ID, \
+               CreateOperandDataFromU64(bb->end()->result_id()))
+
 #define NULL_OPERAND opt::Operand(SPV_OPERAND_TYPE_NONE, {})
 
 namespace spvtools {
@@ -36,6 +41,14 @@ namespace struc {
 
 class RelooperBuilder : public spvtools::opt::InstructionBuilder {
  public:
+
+  enum class UnaryType {
+    AndInt32,
+  };
+  enum class BinaryType {
+    AndInt32,
+  };
+
   // Creates an InstructionBuilder, all new instructions will be inserted before
   // the instruction |insert_before|.
   RelooperBuilder(opt::IRContext* context, opt::Instruction* insert_before,
@@ -56,22 +69,31 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
       opt::BasicBlock* block);
   opt::BasicBlock* Blockify(opt::BasicBlock* lh, opt::BasicBlock* rh);
 
-  std::size_t MakeLabelType();
-  std::size_t MakeBoolType();
-  std::size_t MakeLabelPtrType(std::size_t type_id);
-  std::size_t MakeConstant(std::size_t type_id, std::size_t value);
+  std::uint32_t MakeType(SpvOp op);
+  std::uint32_t MakeLabelType();
+  std::uint32_t MakeBoolType();
+  std::uint32_t MakeLabelPtrType(std::size_t type_id);
+  std::uint32_t MakeConstant(std::size_t type_id, std::size_t value);
   std::unique_ptr<opt::Instruction> MakeLabel();
   std::unique_ptr<opt::Instruction> MakeCheckLabel(std::size_t value);
   std::unique_ptr<opt::Instruction> makeSetLabel(std::size_t value);
   std::unique_ptr<opt::Instruction> makeGetLabel();
+  opt::BasicBlock* MakeUnary(UnaryType type, opt::Operand condition); // returning a basic block just to make things easier for me.
+  opt::BasicBlock* MakeBinary(
+      BinaryType type, opt::Operand lh_cond, opt::Operand rh_cond);  // returning a basic block just
+                                                // to make things easier for me.
   // allows creating a conditional branch without a false_branch, this is not allowed in spirv. make sure it always has a false branch with `SetIfFalse`.
-  std::unique_ptr<opt::Instruction> MakeIf(opt::Operand condition, opt::BasicBlock* true_branch, opt::BasicBlock* false_branch = nullptr);
+  opt::BasicBlock* MakeIf(opt::Operand condition, opt::BasicBlock* true_branch, opt::BasicBlock* false_branch = nullptr);
   void SetIfFalse(
       opt::Instruction* in, opt::BasicBlock* false_branch);
+  void SetIfFalse(opt::BasicBlock* in, opt::BasicBlock* false_branch);
 
   // blockify, but creates a new block instead of appending the first one.
   std::unique_ptr<opt::BasicBlock> MakeSequence(opt::BasicBlock* lh,
                                                 opt::BasicBlock* rh);
+
+  // returns the result_id as operand from the lat instruction of the block.
+  static opt::Operand OperandFromBasicBlock(opt::BasicBlock* bb);
 
   std::uint32_t label_type_id = std::numeric_limits<std::uint32_t>::max();
   std::uint32_t label_id = std::numeric_limits<std::uint32_t>::max();
