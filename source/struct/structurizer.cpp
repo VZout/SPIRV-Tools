@@ -90,12 +90,12 @@ struct Triage {
         auto condition = tail->GetOperand(0);
         auto true_target_id = tail->GetSingleWordOperand(1);
         auto false_target_id = tail->GetSingleWordOperand(2);
-        block->AddBranchTo(block_list[true_target_id], condition, block->code);
-        block->AddBranchTo(block_list[false_target_id], condition, block->code);
+        block->AddBranchTo(block_list[true_target_id], condition);
+        block->AddBranchTo(block_list[false_target_id], NULL_OPERAND); // VIK-TODO: NULL-OPERAND since the default target should not have a condition.
       } else if (tail->opcode() == SpvOp::SpvOpBranch) {  // jumperoni statement
         auto target_id = tail->GetSingleWordOperand(0);
         auto target = block_list[target_id];
-        block->AddBranchTo(target, NULL_OPERAND, block->code);
+        block->AddBranchTo(target, NULL_OPERAND);
       }
     }
   }

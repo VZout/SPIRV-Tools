@@ -233,7 +233,7 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
   // Each block must branch somewhere.
   assert(default_target);
 
-  opt::BasicBlock* root;
+  opt::BasicBlock* root = nullptr;
 
   // Emit a list of if/else
   if (switch_condition == NULL_OPERAND) {
@@ -344,9 +344,9 @@ Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
 opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
                                 bool set_label) {
   std::unique_ptr<opt::Instruction> label = nullptr;
-  if (set_label) {
+  //if (set_label) {
     label = builder.NewLabel(target->id);
-  }
+  //}
   opt::BasicBlock* ret = new opt::BasicBlock(std::move(label));
 
   if (code) {
