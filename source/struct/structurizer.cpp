@@ -40,7 +40,7 @@ struct Triager {
 
   void Triage(opt::Instruction* curr) {
     if (IsLoopInst(curr)) {
-      LoopTask::Handle(*this, curr); // plz no don't do this to me
+      LoopTask::Handle(*this, curr);
     } else if (IsConditionalBranchInst(curr)) {
       IfTask::Handle(*this, curr);
     } else if (IsBranchInst(curr)) {
@@ -118,12 +118,29 @@ struct Triager {
         ->get();  // VIK-TODO: Is this valid?
   }
 
-  bool IsLoopInst(opt::Instruction* inst) {}
-  bool IsBranchInst(opt::Instruction* inst) {}
-  bool IsReturnInst(opt::Instruction* inst) {}
-  bool IsConditionalBranchInst(opt::Instruction* inst) {}
-  bool IsUnreachableInst(opt::Instruction* inst) {}
-  bool IsSwitchInst(opt::Instruction* inst) {}
+  bool IsLoopInst(opt::Instruction* inst) {
+    // This is super problematic :cry:
+    // possible solution: 
+      // If the instruction is opbranchconditional and the next LAST branch in the basic block targets self's target...
+      // This becomes problematic with branches within the loop since it breaks up the loop block.
+      // Is checking whether a child branch branches to self enough?
+  }
+  bool IsBranchInst(opt::Instruction* inst) {
+    return inst->opcode() == SpvOpBranch;
+  }
+  bool IsReturnInst(opt::Instruction* inst) {
+    return inst->opcode() == SpvOpReturn
+    || inst->opcode() == SpvOpReturnValue;
+  }
+  bool IsConditionalBranchInst(opt::Instruction* inst) {
+    return inst->opcode() == SpvOpBranch;
+  }
+  bool IsUnreachableInst(opt::Instruction* inst) {
+    return inst->opcode() == SpvOpUnreachable;
+  }
+  bool IsSwitchInst(opt::Instruction* inst) {
+    return inst->opcode() == SpvOpSwitch;
+  }
 };
 
 struct Task {
@@ -180,7 +197,7 @@ struct BlockTask : Task {
 struct LoopTask : Task {
   LoopTask(Triager& parent) : Task(parent) {}
 
-  static void Handle(Triager& parent, opt::BasicBlock* curr) {
+  static void Handle(Triager& parent, opt::Instruction* curr) {
     // VIK-TODO
   }
 
@@ -192,7 +209,7 @@ struct LoopTask : Task {
 struct SwitchTask : Task {
   SwitchTask(Triager& parent) : Task(parent) {}
 
-  static void Handle(Triager& parent, opt::BasicBlock* curr) {
+  static void Handle(Triager& parent, opt::Instruction* curr) {
     // VIK-TODO
   }
 
