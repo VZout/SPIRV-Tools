@@ -38,8 +38,22 @@ struct Triager {
   Triager(Relooper& relooper, opt::Function& function)
       : relooper(relooper), function(function) {}
 
-  void Triage(opt::Instruction* curr) {}
-  void Triage(opt::BasicBlock* curr) {}
+  void Triage(opt::Instruction* curr) {
+    if (IsLoopInst(curr)) {
+      LoopTask::Handle(*this, curr); // plz no don't do this to me
+    } else if (IsConditionalBranchInst(curr)) {
+      IfTask::Handle(*this, curr);
+    } else if (IsBranchInst(curr)) {
+      BreakTask::Handle(*this, curr);
+    } else if (IsReturnInst(curr)) {
+      ReturnTask::Handle(*this, curr);
+    } else if (IsUnreachableInst(curr)) {
+      UnreachableTask::Handle(*this, curr);
+    } else if (IsSwitchInst(curr)) {
+      SwitchTask::Handle(*this, curr);
+    }
+  }
+  void Triage(opt::BasicBlock* curr) { BlockTask::Handle(*this, curr); }
 
   std::unique_ptr<opt::Instruction> CopyInst(opt::Instruction* inst) {
     return inst->CloneSPTR(relooper.GetContext());
@@ -103,6 +117,13 @@ struct Triager {
         .Get()
         ->get();  // VIK-TODO: Is this valid?
   }
+
+  bool IsLoopInst(opt::Instruction* inst) {}
+  bool IsBranchInst(opt::Instruction* inst) {}
+  bool IsReturnInst(opt::Instruction* inst) {}
+  bool IsConditionalBranchInst(opt::Instruction* inst) {}
+  bool IsUnreachableInst(opt::Instruction* inst) {}
+  bool IsSwitchInst(opt::Instruction* inst) {}
 };
 
 struct Task {
@@ -168,8 +189,20 @@ struct LoopTask : Task {
   }
 };
 
+struct SwitchTask : Task {
+  SwitchTask(Triager& parent) : Task(parent) {}
+
+  static void Handle(Triager& parent, opt::BasicBlock* curr) {
+    // VIK-TODO
+  }
+
+  void Run() override {
+    // VIK-TODO
+  }
+};
+
   struct ReturnTask : public Task {
-  static void handle(Triager& parent, opt::Instruction* curr) {
+  static void Handle(Triager& parent, opt::Instruction* curr) {
     // reuse the return
     parent.GetCurrNativeBlock()->AddInstruction(parent.CopyInst(curr));
     parent.StopControlFlow();
@@ -177,7 +210,7 @@ struct LoopTask : Task {
 };
 
     struct UnreachableTask : public Task {
-  static void handle(Triager& parent, opt::Instruction* curr) {
+  static void Handle(Triager& parent, opt::Instruction* curr) {
     // reuse the return
     parent.GetCurrNativeBlock()->AddInstruction(parent.CopyInst(curr));
     parent.StopControlFlow();
@@ -235,7 +268,7 @@ struct IfTask : Task {
 
 // VIK-TODO: Rename to branch target.
   struct BreakTask : public Task {
-  static void handle(Triager& parent, opt::Instruction* curr) {
+  static void Handle(Triager& parent, opt::Instruction* curr) {
     // add the branch. note how if the condition is false, it is the right
     // value there as well
     auto* before = parent.GetCurrBlock();
