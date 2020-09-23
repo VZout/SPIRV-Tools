@@ -156,6 +156,21 @@ std::unique_ptr<opt::Function> Relooper::Render(opt::IRContext* new_context,
   return func;
 }
 
+Block* Relooper::NewBlock() {
+
+      std::unique_ptr<opt::Instruction> label(
+      new opt::Instruction(context, SpvOpLabel, 0, context->TakeNextUniqueId(), {}));
+  opt::BasicBlock* bb = new opt::BasicBlock(std::move(label)); // VIK-TODO: mem leak
+
+  auto block =
+      std::make_unique<Block>(bb, NULL_OPERAND);  // VIK_TODO: SWITCH OMITTED.
+  block->id = block_id_counter++;
+  auto ptr = block.get();
+  blocks.push_back(std::move(block));
+
+  return ptr;
+}
+
 Block* Relooper::AddBlock(opt::BasicBlock* code,
                           opt::BasicBlock* switch_condition) {
 
@@ -164,10 +179,16 @@ Block* Relooper::AddBlock(opt::BasicBlock* code,
   auto ptr = block.get();
   blocks.push_back(std::move(block));
   
-  return ptr;
+  return ptr;   
 }
 
 Block* Block::FromOptBasicBlock(opt::BasicBlock* block) {
+
+      auto label =
+      NewLabel(GetContext()->TakeNextUniqueId());  // TODO: get a new unique id
+                                                   // or reuse previous one?
+  auto ret = std::make_unique<opt::BasicBlock>(std::move(label));
+
   return new Block(block);
 }
 

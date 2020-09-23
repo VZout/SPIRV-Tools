@@ -400,6 +400,7 @@ class Relooper {
   std::unique_ptr<opt::Function> Render(opt::IRContext* new_context,
                                         opt::Function& old_function);
 
+  Block* NewBlock();
     Block* AddBlock(opt::BasicBlock* code, opt::BasicBlock* switch_condition);
 
   template <typename T>
