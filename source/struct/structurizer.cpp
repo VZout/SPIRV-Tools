@@ -23,31 +23,38 @@
 namespace spvtools {
 namespace struc {
 
-struct Triager {
-  using TaskPtr =  std::shared_ptr<Task>;
+struct Task;
 
+struct Triager {
+  using TaskPtr = std::shared_ptr<Task>;
+
+  opt::Function& function;
   Relooper& relooper;
   Block* curr_relooper_block;
   std::vector<TaskPtr> stack;
   std::map<std::uint32_t, Block*> break_targets;
+  std::map<std::uint32_t, Block*> id_block_map;
 
-  Triager(Relooper& builder) : relooper(relooper)
-  {
+  Triager(Relooper& builder, opt::Function& function)
+      : relooper(relooper), function(function) {}
 
-  }
-
+  void Triage(opt::Instruction* curr) {}
   void Triage(opt::BasicBlock* curr) {}
 
-  void AddBranch(Block* from, Block* to, Operand condition = NULL_OPERAND) { // VIK-TODO operand might need to be changed to bb.
+  void AddBranch(
+      Block* from, Block* to,
+      Operand condition =
+          NULL_OPERAND) {  // VIK-TODO operand might need to be changed to bb.
     from->AddBranchTo(to, condition);
   }
 
-  Block* MakeBlock() {
-    return relooper.NewBlock();
+  void StopControlFlow() {
+    StartBlock();
   }
 
-  Block* StartBlock() { return SetCurrBlock(MakeBlock());
-  }
+  Block* MakeBlock() { return relooper.NewBlock(); }
+
+  Block* StartBlock() { return SetCurrBlock(MakeBlock()); }
 
   void FinishBlock() {
     // irrelevant for spirv. could extent for validaiton.
@@ -64,7 +71,8 @@ struct Triager {
 
   opt::BasicBlock* GetCurrNativeBlock() { return curr_relooper_block->code; }
 
-  // VIK-TODO: Not sure if this will be usefull. Might be interesting for undconditional branching.
+  // VIK-TODO: Not sure if this will be usefull. Might be interesting for
+  // undconditional branching.
   void AddBreakTarget(std::uint32_t id, Block* b) {
     break_targets.insert({id, b});
   }
@@ -72,11 +80,18 @@ struct Triager {
   Operand GetConditionalBranchCondition(opt::Instruction* branch_inst) {
     return branch_inst->GetOperand(0);
   }
-  Operand GetConditionalBranchTrueBranch(opt::Instruction* branch_inst) {
-    return branch_inst->GetOperand(1);
+  opt::BasicBlock* GetConditionalBranchTrueBranch(
+      opt::Instruction* branch_inst) {
+    return function.FindBlock((int)branch_inst->GetOperand(1).AsLiteralUint64())
+        .Get()
+        ->get();  // VIK-TODO: Is this valid? can you find a block by using the
+                  // operand like this? is it the same id?
   }
-  Operand GetConditionalBranchFalseBranch(opt::Instruction* branch_inst) {
-    return branch_inst->GetOperand(2);
+  opt::BasicBlock* GetConditionalBranchFalseBranch(
+      opt::Instruction* branch_inst) {
+    return function.FindBlock((int)branch_inst->GetOperand(2).AsLiteralUint64())
+        .Get()
+        ->get();  // VIK-TODO: Is this valid?
   }
 };
 
@@ -87,10 +102,22 @@ struct Task {
 };
 
 struct TriageTask : Task {
-  opt::BasicBlock* curr;
+  opt::Instruction* curr;
+  opt::BasicBlock* curr_bb;
+
+  TriageTask(Triager& parent, opt::Instruction* curr)
+      : Task(parent), curr(curr), curr_bb(nullptr) {}
+
   TriageTask(Triager& parent, opt::BasicBlock* curr)
-      : Task(parent), curr(curr) {}
-  void Run() override { parent.Triage(curr); }
+      : Task(parent), curr(nullptr), curr_bb(curr) {}
+
+  void Run() override {
+    if (curr) {
+      parent.Triage(curr);
+    } else if (curr_bb) {
+      parent.Triage(curr_bb);
+    }
+  }
 };
 
 // VIK-TODO: Not sure if identifying blocks are possible...
@@ -120,65 +147,80 @@ struct BlockTask : Task {
 };
 
 struct LoopTask : Task {
-  LoopTask(Triager& parent)
-      : Task(parent) {}
+  LoopTask(Triager& parent) : Task(parent) {}
 
   static void Handle(Triager& parent, opt::BasicBlock* curr) {
-      // VIK-TODO
+    // VIK-TODO
   }
 
-  void Run() override { 
-      // VIK-TODO
+  void Run() override {
+    // VIK-TODO
+  }
+};
+
+  struct ReturnTask : public Task {
+  static void handle(Triager& parent, opt::Instruction* curr) {
+    // reuse the return
+    parent.GetCurrNativeBlock()->AddInstruction(curr);
+    parent.StopControlFlow();
+  }
+};
+
+    struct UnreachableTask : public Task {
+  static void handle(Triager& parent, opt::Instruction* curr) {
+    // reuse the return
+    parent.GetCurrNativeBlock()->AddInstruction(curr);
+    parent.StopControlFlow();
   }
 };
 
 struct IfTask : Task {
   opt::Instruction* curr;
- Block* condition;
+  Block* condition;
   Block* if_true_end;
- int phase = 0;
+  int phase = 0;
 
- IfTask(Triager& parent, opt::Instruction* curr) : Task(parent), curr(curr) {
+  IfTask(Triager& parent, opt::Instruction* curr) : Task(parent), curr(curr) {}
 
- }
+  static void Handle(Triager& parent, opt::Instruction* curr) {
+    auto task = std::make_shared<IfTask>(parent, curr);
+    task->curr = curr;
+    task->condition = parent.GetCurrBlock();
+    auto* if_true_begin = parent.StartBlock();
+    parent.AddBranch(task->condition, if_true_begin,
+                     parent.GetConditionalBranchCondition(curr));
+    // we always have a false in spirv. // VIK-TODO: But this logic might
+    // interfere with the searching for a default target when rendering a block
+    parent.stack.push_back(task);
+    parent.stack.push_back(std::make_shared<TriageTask>(
+        parent, parent.GetConditionalBranchFalseBranch(curr)));
+    parent.stack.push_back(task);
+    parent.stack.push_back(std::make_shared<TriageTask>(
+        parent, parent.GetConditionalBranchTrueBranch(curr)));
+  }
 
- static void Handle(Triager& parent, opt::Instruction* curr) {
-   auto task = std::make_shared<IfTask>(parent, curr);
-   task->curr = curr;
-   task->condition = parent.GetCurrBlock();
-   auto* if_true_begin = parent.StartBlock();
-   parent.AddBranch(task->condition, if_true_begin,
-                    parent.GetConditionalBranchCondition(curr));
-   // we always have a false in spirv. // VIK-TODO: But this logic might interfere with the searching for a default target when rendering a block
-     parent.stack.push_back(task);
-     parent.stack.push_back(
-         std::make_shared<TriageTask>(parent, parent.GetConditionalBranchFalseBranch(curr)));
-   parent.stack.push_back(task);
-   parent.stack.push_back(std::make_shared<TriageTask>(parent, parent.GetConditionalBranchTrueBranch(curr)));
- }
-
- // wtf happens here?
- void Run() override {
-   if (phase == 0) {
-     // end of ifTrue
-     if_true_end = parent.GetCurrBlock();
-     auto* after = parent.StartBlock();
-     // if condition was false, go after the ifTrue, to ifFalse or outside
-     parent.AddBranch(condition, after);
-     if (!curr->ifFalse) {
-       parent.AddBranch(if_true_end,
-                        after);  // VIK-TODO: Seems to imply the block always
-                                 // has a false statement.
-     }
-     phase++;
-   } else if (phase == 1) {
-     // end if ifFalse
-     auto* if_false_end = parent.GetCurrBlock();
-     auto* after = parent.StartBlock();
-     parent.AddBranch(if_true_end, after);
-     parent.AddBranch(if_false_end, after);
-   }
- }
+  // wtf happens here?
+  void Run() override {
+    if (phase == 0) {
+      // end of ifTrue
+      if_true_end = parent.GetCurrBlock();
+      auto* after = parent.StartBlock();
+      // if condition was false, go after the ifTrue, to ifFalse or outside
+      parent.AddBranch(condition, after);
+      // if (!curr->ifFalse) {
+      //  parent.AddBranch(if_true_end,
+      //                   after);  // VIK-TODO: Seems to imply the block always
+      // has a false statement.
+      //}
+      phase++;
+    } else if (phase == 1) {
+      // end if ifFalse
+      auto* if_false_end = parent.GetCurrBlock();
+      auto* after = parent.StartBlock();
+      parent.AddBranch(if_true_end, after);
+      parent.AddBranch(if_false_end, after);
+    }
+  }
 };
 
 struct Triage {

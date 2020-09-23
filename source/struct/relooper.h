@@ -285,7 +285,7 @@ struct Block {
   BlockBranchMap processed_branches_out;
   BlockSet processed_branches_in;
   Shape* parent = nullptr;  // The shape we are directly inside
-  std::size_t id = -1;  // A unique identifier, defined when added to relooper
+  std::uint32_t id = -1;  // A unique identifier, defined when added to relooper
   // The code in this block. This can be arbitrary wasm code, including internal
   // control flow, it should just not branch to the outside
   opt::BasicBlock* code;
@@ -295,8 +295,6 @@ struct Block {
   // If true, we are a multiple entry, so reaching us requires setting the label
   // variable
   bool is_checked_multiple_entry;
-
-  static Block* FromOptBasicBlock(opt::BasicBlock* block);
 
   Block(opt::BasicBlock* code, Operand switch_condition = NULL_OPERAND);
   ~Block();
@@ -418,7 +416,7 @@ class Relooper {
   std::deque<std::unique_ptr<Shape>> shapes;
   Shape* root;
   bool min_size;
-  std::size_t block_id_counter;
+  std::uint32_t block_id_counter;
   std::size_t shape_id_counter;
 };
 

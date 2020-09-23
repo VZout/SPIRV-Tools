@@ -182,16 +182,6 @@ Block* Relooper::AddBlock(opt::BasicBlock* code,
   return ptr;   
 }
 
-Block* Block::FromOptBasicBlock(opt::BasicBlock* block) {
-
-      auto label =
-      NewLabel(GetContext()->TakeNextUniqueId());  // TODO: get a new unique id
-                                                   // or reuse previous one?
-  auto ret = std::make_unique<opt::BasicBlock>(std::move(label));
-
-  return new Block(block);
-}
-
 Block::Block(opt::BasicBlock* code, Operand switch_condition)
     : code(code),
       switch_condition(switch_condition),
@@ -378,7 +368,7 @@ Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
 
 opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
                                 bool set_label) {
-  opt::BasicBlock* ret = new opt::BasicBlock(builder.NewLabel(target->id));
+  opt::BasicBlock* ret = new opt::BasicBlock(builder.NewLabel(target->id)); // VIK-TODO: Wrong label id? prefer unique
   if (set_label) {
     auto label = builder.makeSetLabel(target->id);
     ret->AddInstruction(std::move(label));
