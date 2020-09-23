@@ -285,7 +285,7 @@ struct Block {
   BlockBranchMap processed_branches_out;
   BlockSet processed_branches_in;
   Shape* parent = nullptr;  // The shape we are directly inside
-  int id = -1;  // A unique identifier, defined when added to relooper
+  std::size_t id = -1;  // A unique identifier, defined when added to relooper
   // The code in this block. This can be arbitrary wasm code, including internal
   // control flow, it should just not branch to the outside
   opt::BasicBlock* code;
@@ -400,6 +400,8 @@ class Relooper {
   std::unique_ptr<opt::Function> Render(opt::IRContext* new_context,
                                         opt::Function& old_function);
 
+    Block* AddBlock(opt::BasicBlock* code, opt::BasicBlock* switch_condition);
+
   template <typename T>
   T* AddShape() {
     auto shape = std::make_unique<T>();
@@ -411,7 +413,7 @@ class Relooper {
 
  private:
   opt::IRContext* context;
-  std::deque<Block*> blocks;
+  std::deque<std::unique_ptr<Block>> blocks;
   std::deque<std::unique_ptr<Shape>> shapes;
   Shape* root;
   bool min_size;

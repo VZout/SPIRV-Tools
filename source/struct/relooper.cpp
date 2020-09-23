@@ -116,7 +116,7 @@ void Relooper::Calculate(Block* entry) {
 
   // Add incoming branches from live blocks, ignoring dead code
   for (unsigned i = 0; i < blocks.size(); i++) {
-    Block* curr = blocks[i];
+    Block* curr = blocks[i].get();
     if (!contains(live, curr)) {
       continue;
     }
@@ -154,6 +154,17 @@ std::unique_ptr<opt::Function> Relooper::Render(opt::IRContext* new_context,
   func->SetFunctionEnd(old_function.EndInst()->CloneSPTR(new_context));
 
   return func;
+}
+
+Block* Relooper::AddBlock(opt::BasicBlock* code,
+                          opt::BasicBlock* switch_condition) {
+
+  auto block = std::make_unique<Block>(code, NULL_OPERAND); // VIK_TODO: SWITCH OMITTED.
+  block->id = block_id_counter++;
+  auto ptr = block.get();
+  blocks.push_back(std::move(block));
+  
+  return ptr;
 }
 
 Block* Block::FromOptBasicBlock(opt::BasicBlock* block) {
