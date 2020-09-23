@@ -35,11 +35,15 @@ struct Triager {
   std::map<std::uint32_t, Block*> break_targets;
   std::map<std::uint32_t, Block*> id_block_map;
 
-  Triager(Relooper& builder, opt::Function& function)
+  Triager(Relooper& relooper, opt::Function& function)
       : relooper(relooper), function(function) {}
 
   void Triage(opt::Instruction* curr) {}
   void Triage(opt::BasicBlock* curr) {}
+
+  std::unique_ptr<opt::Instruction> CopyInst(opt::Instruction* inst) {
+    return inst->CloneSPTR(relooper.GetContext());
+  }
 
   void AddBranch(
       Block* from, Block* to,
@@ -77,6 +81,12 @@ struct Triager {
     break_targets.insert({id, b});
   }
 
+  Block* GetBreakTarget(std::uint32_t id) { return break_targets[id];
+  }
+
+  std::uint32_t GetBranchTargetID(opt::Instruction* branch_inst) {
+    return (int)branch_inst->GetOperand(0).AsLiteralUint64();
+  }
   Operand GetConditionalBranchCondition(opt::Instruction* branch_inst) {
     return branch_inst->GetOperand(0);
   }
@@ -161,7 +171,7 @@ struct LoopTask : Task {
   struct ReturnTask : public Task {
   static void handle(Triager& parent, opt::Instruction* curr) {
     // reuse the return
-    parent.GetCurrNativeBlock()->AddInstruction(curr);
+    parent.GetCurrNativeBlock()->AddInstruction(parent.CopyInst(curr));
     parent.StopControlFlow();
   }
 };
@@ -169,7 +179,7 @@ struct LoopTask : Task {
     struct UnreachableTask : public Task {
   static void handle(Triager& parent, opt::Instruction* curr) {
     // reuse the return
-    parent.GetCurrNativeBlock()->AddInstruction(curr);
+    parent.GetCurrNativeBlock()->AddInstruction(parent.CopyInst(curr));
     parent.StopControlFlow();
   }
 };
@@ -219,6 +229,23 @@ struct IfTask : Task {
       auto* after = parent.StartBlock();
       parent.AddBranch(if_true_end, after);
       parent.AddBranch(if_false_end, after);
+    }
+  }
+};
+
+// VIK-TODO: Rename to branch target.
+  struct BreakTask : public Task {
+  static void handle(Triager& parent, opt::Instruction* curr) {
+    // add the branch. note how if the condition is false, it is the right
+    // value there as well
+    auto* before = parent.GetCurrBlock();
+    parent.AddBranch(before, parent.GetBreakTarget(parent.GetBranchTargetID(curr)),
+                     NULL_OPERAND);
+    if (/*curr->condition*/ false) { // SPIRV's OpBranch is unconditional.
+      auto* after = parent.StartBlock();
+      parent.AddBranch(before, after);
+    } else {
+      parent.StopControlFlow();
     }
   }
 };

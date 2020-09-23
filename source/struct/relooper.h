@@ -410,6 +410,9 @@ class Relooper {
     return shapePtr;
   }
 
+  opt::IRContext* GetContext() { return context;
+  }
+
  private:
   opt::IRContext* context;
   std::deque<std::unique_ptr<Block>> blocks;
