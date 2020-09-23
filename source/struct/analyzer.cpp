@@ -28,7 +28,7 @@ void Analyzer::GetBlocksOut(Block* source, BlockSet& entries,
 
 void Analyzer::Solipsize(Block* target, Branch::FlowType type, Shape* ancestor,
                          BlockSet& from) {
-  // PrintDebug("Solipsizing branches into %d\n", Target->Id);
+  printf("Solipsizing branches into %d\n", target->id);
   // DebugDump(From, "  relevant to solipsize: ");
   for (auto iter = target->branches_in.begin();
        iter != target->branches_in.end();) {
@@ -45,13 +45,13 @@ void Analyzer::Solipsize(Block* target, Branch::FlowType type, Shape* ancestor,
     target->processed_branches_in.insert(Prior);
     Prior->branches_out.erase(target);
     Prior->processed_branches_out[target] = PriorOut;
-    // PrintDebug("  eliminated branch from %d\n", Prior->Id);
+    printf("  eliminated branch from %d\n", Prior->id);
   }
 }
 
 Shape* Analyzer::MakeSimple(BlockSet& blocks, Block* inner,
                             BlockSet& next_entries) {
-  // PrintDebug("creating simple block with block #%d\n", inner->id);
+  printf("creating simple block with block #%d\n", inner->id);
   SimpleShape* Simple = parent->AddShape<SimpleShape>();
   Simple->inner = inner;
   inner->parent = Simple;
@@ -97,8 +97,8 @@ Shape* Analyzer::MakeLoop(BlockSet& blocks, BlockSet& entries,
       }
     }
   }
-  /*PrintDebug("creating loop block:\n", 0);
-  DebugDump(InnerBlocks, "  inner blocks:");
+  printf("creating loop block:\n");
+  /*DebugDump(InnerBlocks, "  inner blocks:");
   DebugDump(Entries, "  inner entries:");
   DebugDump(Blocks, "  outer blocks:");
   DebugDump(NextEntries, "  outer entries:");*/
@@ -127,8 +127,8 @@ Shape* Analyzer::MakeMultiple(BlockSet& blocks, BlockSet& entries,
                               BlockBlockSetMap& IndependentGroups,
                               BlockSet& next_entries,
                               bool is_checked_multiple) {
-  /*PrintDebug("creating multiple block with %d inner groups\n",
-             IndependentGroups.size());*/
+  printf("creating multiple block with %d inner groups\n",
+             (int)IndependentGroups.size());
   MultipleShape* Multiple = parent->AddShape<MultipleShape>();
   BlockSet CurrEntries;
   for (auto& iter : IndependentGroups) {

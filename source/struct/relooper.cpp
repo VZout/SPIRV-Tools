@@ -27,9 +27,9 @@ Relooper::Relooper(opt::Module* module)
       shape_id_counter(0) {}
 
 Relooper::~Relooper() {
-  for (auto& block : blocks) {
-    delete block;
-  }
+  //for (auto& block : blocks) {
+  //  delete block;
+  //}
 }
 
 // utility
@@ -103,11 +103,14 @@ void Relooper::Calculate(Block* entry) {
   auto pre_optimizer = PreOptimizer(this);
   auto live = pre_optimizer.FindLive(entry);
 
+  int id = 0;
   auto recursive_explode = [&](Block* b) {
     for (auto c : b->branches_out) {
+      c.first->id = id++;
       blocks.emplace_back(c.first);
     }
   };
+  entry->id = id++;
   blocks.emplace_back(entry);
   recursive_explode(entry);
 
@@ -343,11 +346,11 @@ Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
 
 opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
                                 bool set_label) {
-  std::unique_ptr<opt::Instruction> label = nullptr;
-  //if (set_label) {
-    label = builder.NewLabel(target->id);
-  //}
-  opt::BasicBlock* ret = new opt::BasicBlock(std::move(label));
+  opt::BasicBlock* ret = new opt::BasicBlock(builder.NewLabel(target->id));
+  if (set_label) {
+    auto label = builder.makeSetLabel(target->id);
+    ret->AddInstruction(std::move(label));
+  }
 
   if (code) {
     ret->AddInstructions(code);
