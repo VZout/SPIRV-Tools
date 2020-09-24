@@ -20,11 +20,13 @@
 namespace spvtools {
 namespace struc {
 
-Relooper::Relooper(opt::Module* module)
-    : root(nullptr),
+Relooper::Relooper(opt::IRContext* context)
+    : context(context), root(nullptr),
       min_size(false),
       block_id_counter(1),  // block ID 0 is reserved for clearings
-      shape_id_counter(0) {}
+      shape_id_counter(0) {
+
+}
 
 Relooper::~Relooper() {
   //for (auto& block : blocks) {
@@ -182,18 +184,24 @@ Block* Relooper::AddBlock(opt::BasicBlock* code,
   return ptr;   
 }
 
+void Relooper::ForEachBlock(std::function<void(Block*)> lambda) {
+  for (auto& b : blocks) {
+    lambda(b.get());
+  }
+}
+
 Block::Block(opt::BasicBlock* code, Operand switch_condition)
     : code(code),
       switch_condition(switch_condition),
       is_checked_multiple_entry(false) {}
 
 Block::~Block() {
-  for (auto& iter : processed_branches_out) {
-    delete iter.second;
-  }
-  for (auto& iter : branches_out) {
-    delete iter.second;
-  }
+  //for (auto& iter : processed_branches_out) {
+    //delete iter.second;
+  //}
+  //for (auto& iter : branches_out) {
+    //delete iter.second;
+  //}
 }
 
 void Block::AddBranchTo(Block* target, Operand condition,

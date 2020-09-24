@@ -291,7 +291,7 @@ struct Block {
   opt::BasicBlock* code;
   // If nullptr, then this block ends in ifs (or nothing). otherwise, this block
   // ends in a switch, done on this condition
-  Operand switch_condition;
+  Operand switch_condition = NULL_OPERAND;
   // If true, we are a multiple entry, so reaching us requires setting the label
   // variable
   bool is_checked_multiple_entry;
@@ -385,7 +385,7 @@ struct LoopShape : public Shape {
 
 class Relooper {
  public:
-  Relooper(opt::Module* module);
+  Relooper(opt::IRContext* context);
   ~Relooper();
 
   // Disables copy/move constructor/assignment operations.
@@ -412,6 +412,8 @@ class Relooper {
 
   opt::IRContext* GetContext() { return context;
   }
+
+  void ForEachBlock(std::function<void(Block*)> lambda);
 
  private:
   opt::IRContext* context;

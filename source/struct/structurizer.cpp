@@ -23,9 +23,13 @@
 namespace spvtools {
 namespace struc {
 
-struct Task;
-
 struct Triager {
+  struct Task {
+    Triager& parent;
+    Task(Triager& parent) : parent(parent) {}
+    virtual void Run() { assert(false); };
+  };
+
   using TaskPtr = std::shared_ptr<Task>;
 
   opt::Function& function;
@@ -35,8 +39,200 @@ struct Triager {
   std::map<std::uint32_t, Block*> break_targets;
   std::map<std::uint32_t, Block*> id_block_map;
 
+  struct TriageTask : Task {
+    opt::Instruction* curr;
+    opt::BasicBlock* curr_bb;
+
+    TriageTask(Triager& parent, opt::Instruction* curr)
+        : Task(parent), curr(curr), curr_bb(nullptr) {}
+
+    TriageTask(Triager& parent, opt::BasicBlock* curr)
+        : Task(parent), curr(nullptr), curr_bb(curr) {}
+
+    void Run() override {
+      if (curr) {
+        parent.Triage(curr);
+      } else if (curr_bb) {
+        parent.Triage(curr_bb);
+      }
+    }
+  };
+
+  // VIK-TODO: Not sure if identifying blocks are possible...
+  struct BlockTask : Task {
+    opt::BasicBlock* curr;
+    Block* later;
+
+    BlockTask(Triager& parent, opt::BasicBlock* curr)
+        : Task(parent), curr(curr) {}
+
+    static void Handle(Triager& parent, opt::BasicBlock* curr) {
+      if (curr->GetLabel()) {
+        // we may be branched to. create a target, and
+        // ensure we are called at the join point
+        auto task = std::make_shared<BlockTask>(parent, curr);
+        task->curr = curr;
+        task->later = parent.MakeBlock();
+        parent.AddBreakTarget(curr->id(), task->later);
+        parent.stack.push_back(task);
+      }
+      curr->ForEachInst([&](opt::Instruction* inst) {
+        parent.stack.push_back(std::make_shared<TriageTask>(parent, inst));
+      });
+    }
+
+    void Run() override { parent.AddBranch(parent.GetCurrBlock(), later); }
+  };
+
+  struct LoopTask : Task {
+    LoopTask(Triager& parent) : Task(parent) {}
+
+    static void Handle(Triager& parent, opt::Instruction* curr) {
+      // VIK-TODO
+    }
+
+    void Run() override {
+      // VIK-TODO
+    }
+  };
+
+  struct SwitchTask : Task {
+    SwitchTask(Triager& parent) : Task(parent) {}
+
+    static void Handle(Triager& parent, opt::Instruction* curr) {
+      // VIK-TODO
+    }
+
+    void Run() override {
+      // VIK-TODO
+    }
+  };
+
+  struct ReturnTask : public Task {
+    static void Handle(Triager& parent, opt::Instruction* curr) {
+      // reuse the return
+      parent.GetCurrNativeBlock()->AddInstruction(parent.CopyInst(curr));
+      parent.StopControlFlow();
+    }
+  };
+
+  struct UnreachableTask : public Task {
+    static void Handle(Triager& parent, opt::Instruction* curr) {
+      // reuse the return
+      parent.GetCurrNativeBlock()->AddInstruction(parent.CopyInst(curr));
+      parent.StopControlFlow();
+    }
+  };
+
+  struct IfTask : Task {
+    opt::Instruction* curr;
+    Block* condition;
+    Block* if_true_end;
+    int phase = 0;
+
+    IfTask(Triager& parent, opt::Instruction* curr)
+        : Task(parent), curr(curr) {}
+
+    static void Handle(Triager& parent, opt::Instruction* curr) {
+      auto task = std::make_shared<IfTask>(parent, curr);
+      task->curr = curr;
+      task->condition = parent.GetCurrBlock();
+      auto* if_true_begin = parent.StartBlock();
+      parent.AddBranch(task->condition, if_true_begin,
+                       parent.GetConditionalBranchCondition(curr));
+      // we always have a false in spirv. // VIK-TODO: But this logic might
+      // interfere with the searching for a default target when rendering a
+      // block
+      parent.stack.push_back(task);
+      parent.stack.push_back(std::make_shared<TriageTask>(
+          parent, parent.GetConditionalBranchFalseBranch(curr)));
+      parent.stack.push_back(task);
+      parent.stack.push_back(std::make_shared<TriageTask>(
+          parent, parent.GetConditionalBranchTrueBranch(curr)));
+    }
+
+    // wtf happens here?
+    void Run() override {
+      if (phase == 0) {
+        // end of ifTrue
+        if_true_end = parent.GetCurrBlock();
+        auto* after = parent.StartBlock();
+        // if condition was false, go after the ifTrue, to ifFalse or outside
+        parent.AddBranch(condition, after);
+        // if (!curr->ifFalse) {
+        //  parent.AddBranch(if_true_end,
+        //                   after);  // VIK-TODO: Seems to imply the block
+        //                   always
+        // has a false statement.
+        //}
+        phase++;
+      } else if (phase == 1) {
+        // end if ifFalse
+        auto* if_false_end = parent.GetCurrBlock();
+        auto* after = parent.StartBlock();
+        parent.AddBranch(if_true_end, after);
+        parent.AddBranch(if_false_end, after);
+      }
+    }
+  };
+
+  // VIK-TODO: Rename to branch target.
+  struct BreakTask : public Task {
+    static void Handle(Triager& parent, opt::Instruction* curr) {
+      // add the branch. note how if the condition is false, it is the right
+      // value there as well
+      auto* before = parent.GetCurrBlock();
+      parent.AddBranch(before,
+                       parent.GetBreakTarget(parent.GetBranchTargetID(curr)),
+                       NULL_OPERAND);
+      if (/*curr->condition*/ false) {  // SPIRV's OpBranch is unconditional.
+        auto* after = parent.StartBlock();
+        parent.AddBranch(before, after);
+      } else {
+        parent.StopControlFlow();
+      }
+    }
+  };
+
   Triager(Relooper& relooper, opt::Function& function)
       : relooper(relooper), function(function) {}
+
+  Block* Gogogo() {
+    auto entry = StartBlock();
+    stack.push_back(TaskPtr(new TriageTask(*this, function.entry().get())));
+
+    // main loop
+    while (stack.size() > 0) {
+      TaskPtr curr = stack.back();
+      stack.pop_back();
+      curr->Run();
+    }
+
+    FinishBlock();
+
+    auto make_return = [&]() -> std::unique_ptr<opt::Instruction> {
+      return std::make_unique<opt::Instruction>(relooper.GetContext(),
+                                                SpvOpReturn);
+    };
+
+    auto make_unreachable = [&]() -> std::unique_ptr<opt::Instruction> {
+      return std::make_unique<opt::Instruction>(relooper.GetContext(),
+                                                SpvOpUnreachable);
+    };
+
+    relooper.ForEachBlock([&](Block* r_block) {
+      auto* block = r_block->code;
+      if (r_block->branches_out.empty() &&
+          block->end()->opcode() != SpvOpUnreachable) {
+        // if function returns void insert return op else insert unreachable
+        // op.
+        block->AddInstruction(FunctionReturnsVoid() ? make_return()
+                                                    : make_unreachable());
+      }
+    });
+
+    return entry;
+  }
 
   void Triage(opt::Instruction* curr) {
     if (IsLoopInst(curr)) {
@@ -55,6 +251,19 @@ struct Triager {
   }
   void Triage(opt::BasicBlock* curr) { BlockTask::Handle(*this, curr); }
 
+  bool FunctionReturnsVoid() {
+    auto type_id = function.DefInst().GetSingleWordOperand(0);
+
+    // types
+    for (auto& ty : relooper.GetContext()->module()->GetTypes()) {
+      if (ty->result_id() == type_id) {
+        return ty->opcode() == SpvOpTypeVoid;
+      }
+    }
+
+    return false;
+  }
+
   std::unique_ptr<opt::Instruction> CopyInst(opt::Instruction* inst) {
     return inst->CloneSPTR(relooper.GetContext());
   }
@@ -66,9 +275,7 @@ struct Triager {
     from->AddBranchTo(to, condition);
   }
 
-  void StopControlFlow() {
-    StartBlock();
-  }
+  void StopControlFlow() { StartBlock(); }
 
   Block* MakeBlock() { return relooper.NewBlock(); }
 
@@ -95,8 +302,7 @@ struct Triager {
     break_targets.insert({id, b});
   }
 
-  Block* GetBreakTarget(std::uint32_t id) { return break_targets[id];
-  }
+  Block* GetBreakTarget(std::uint32_t id) { return break_targets[id]; }
 
   std::uint32_t GetBranchTargetID(opt::Instruction* branch_inst) {
     return (int)branch_inst->GetOperand(0).AsLiteralUint64();
@@ -120,17 +326,18 @@ struct Triager {
 
   bool IsLoopInst(opt::Instruction* inst) {
     // This is super problematic :cry:
-    // possible solution: 
-      // If the instruction is opbranchconditional and the next LAST branch in the basic block targets self's target...
-      // This becomes problematic with branches within the loop since it breaks up the loop block.
-      // Is checking whether a child branch branches to self enough?
+    // possible solution:
+    // If the instruction is opbranchconditional and the next LAST branch in the
+    // basic block targets self's target... This becomes problematic with
+    // branches within the loop since it breaks up the loop block. Is checking
+    // whether a child branch branches to self enough?
+    return false;
   }
   bool IsBranchInst(opt::Instruction* inst) {
     return inst->opcode() == SpvOpBranch;
   }
   bool IsReturnInst(opt::Instruction* inst) {
-    return inst->opcode() == SpvOpReturn
-    || inst->opcode() == SpvOpReturnValue;
+    return inst->opcode() == SpvOpReturn || inst->opcode() == SpvOpReturnValue;
   }
   bool IsConditionalBranchInst(opt::Instruction* inst) {
     return inst->opcode() == SpvOpBranch;
@@ -140,163 +347,6 @@ struct Triager {
   }
   bool IsSwitchInst(opt::Instruction* inst) {
     return inst->opcode() == SpvOpSwitch;
-  }
-};
-
-struct Task {
-  Triager& parent;
-  Task(Triager& parent) : parent(parent) {}
-  virtual void Run() { assert(false); };
-};
-
-struct TriageTask : Task {
-  opt::Instruction* curr;
-  opt::BasicBlock* curr_bb;
-
-  TriageTask(Triager& parent, opt::Instruction* curr)
-      : Task(parent), curr(curr), curr_bb(nullptr) {}
-
-  TriageTask(Triager& parent, opt::BasicBlock* curr)
-      : Task(parent), curr(nullptr), curr_bb(curr) {}
-
-  void Run() override {
-    if (curr) {
-      parent.Triage(curr);
-    } else if (curr_bb) {
-      parent.Triage(curr_bb);
-    }
-  }
-};
-
-// VIK-TODO: Not sure if identifying blocks are possible...
-struct BlockTask : Task {
-  opt::BasicBlock* curr;
-  Block* later;
-
-  BlockTask(Triager& parent, opt::BasicBlock* curr)
-      : Task(parent), curr(curr) {}
-
-  static void Handle(Triager& parent, opt::BasicBlock* curr) {
-    if (curr->GetLabel()) {
-      // we may be branched to. create a target, and
-      // ensure we are called at the join point
-      auto task = std::make_shared<BlockTask>(parent, curr);
-      task->curr = curr;
-      task->later = parent.MakeBlock();
-      parent.AddBreakTarget(curr->id(), task->later);
-      parent.stack.push_back(task);
-    }
-    curr->ForEachInst([&](opt::Instruction* inst) {
-      parent.stack.push_back(std::make_shared<TriageTask>(parent, inst));
-    });
-  }
-
-  void Run() override { parent.AddBranch(parent.GetCurrBlock(), later); }
-};
-
-struct LoopTask : Task {
-  LoopTask(Triager& parent) : Task(parent) {}
-
-  static void Handle(Triager& parent, opt::Instruction* curr) {
-    // VIK-TODO
-  }
-
-  void Run() override {
-    // VIK-TODO
-  }
-};
-
-struct SwitchTask : Task {
-  SwitchTask(Triager& parent) : Task(parent) {}
-
-  static void Handle(Triager& parent, opt::Instruction* curr) {
-    // VIK-TODO
-  }
-
-  void Run() override {
-    // VIK-TODO
-  }
-};
-
-  struct ReturnTask : public Task {
-  static void Handle(Triager& parent, opt::Instruction* curr) {
-    // reuse the return
-    parent.GetCurrNativeBlock()->AddInstruction(parent.CopyInst(curr));
-    parent.StopControlFlow();
-  }
-};
-
-    struct UnreachableTask : public Task {
-  static void Handle(Triager& parent, opt::Instruction* curr) {
-    // reuse the return
-    parent.GetCurrNativeBlock()->AddInstruction(parent.CopyInst(curr));
-    parent.StopControlFlow();
-  }
-};
-
-struct IfTask : Task {
-  opt::Instruction* curr;
-  Block* condition;
-  Block* if_true_end;
-  int phase = 0;
-
-  IfTask(Triager& parent, opt::Instruction* curr) : Task(parent), curr(curr) {}
-
-  static void Handle(Triager& parent, opt::Instruction* curr) {
-    auto task = std::make_shared<IfTask>(parent, curr);
-    task->curr = curr;
-    task->condition = parent.GetCurrBlock();
-    auto* if_true_begin = parent.StartBlock();
-    parent.AddBranch(task->condition, if_true_begin,
-                     parent.GetConditionalBranchCondition(curr));
-    // we always have a false in spirv. // VIK-TODO: But this logic might
-    // interfere with the searching for a default target when rendering a block
-    parent.stack.push_back(task);
-    parent.stack.push_back(std::make_shared<TriageTask>(
-        parent, parent.GetConditionalBranchFalseBranch(curr)));
-    parent.stack.push_back(task);
-    parent.stack.push_back(std::make_shared<TriageTask>(
-        parent, parent.GetConditionalBranchTrueBranch(curr)));
-  }
-
-  // wtf happens here?
-  void Run() override {
-    if (phase == 0) {
-      // end of ifTrue
-      if_true_end = parent.GetCurrBlock();
-      auto* after = parent.StartBlock();
-      // if condition was false, go after the ifTrue, to ifFalse or outside
-      parent.AddBranch(condition, after);
-      // if (!curr->ifFalse) {
-      //  parent.AddBranch(if_true_end,
-      //                   after);  // VIK-TODO: Seems to imply the block always
-      // has a false statement.
-      //}
-      phase++;
-    } else if (phase == 1) {
-      // end if ifFalse
-      auto* if_false_end = parent.GetCurrBlock();
-      auto* after = parent.StartBlock();
-      parent.AddBranch(if_true_end, after);
-      parent.AddBranch(if_false_end, after);
-    }
-  }
-};
-
-// VIK-TODO: Rename to branch target.
-  struct BreakTask : public Task {
-  static void Handle(Triager& parent, opt::Instruction* curr) {
-    // add the branch. note how if the condition is false, it is the right
-    // value there as well
-    auto* before = parent.GetCurrBlock();
-    parent.AddBranch(before, parent.GetBreakTarget(parent.GetBranchTargetID(curr)),
-                     NULL_OPERAND);
-    if (/*curr->condition*/ false) { // SPIRV's OpBranch is unconditional.
-      auto* after = parent.StartBlock();
-      parent.AddBranch(before, after);
-    } else {
-      parent.StopControlFlow();
-    }
   }
 };
 
@@ -426,7 +476,7 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
       impl_->target_env, impl_->consumer, binary_in.data(), binary_in.size());
   assert(ir_context);
 
-  auto relooper = std::make_unique<Relooper>(ir_context->module());
+  auto relooper = new Relooper(ir_context.get());
 
   // the new ir context
   auto target_irContext =
@@ -491,11 +541,14 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
 
   for (opt::Function& function : *ir_context->module()) {
     // Convert the basic blocks into relooper friendly structures.
-    Triage tri;
-    tri.OptFunctionToLooperBlocks(function);
+    // Triage tri;
+    // tri.OptFunctionToLooperBlocks(function);
+
+    Triager tri(*relooper, function);
+    auto entry = tri.Gogogo();
 
     // Restructure a function
-    relooper->Calculate(tri.GetEntry());
+    relooper->Calculate(entry);
 
     target_irContext->AddFunction(
         relooper->Render(target_irContext.get(), function));
