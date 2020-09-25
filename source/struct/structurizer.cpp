@@ -76,12 +76,22 @@ struct Triager {
         parent.AddBreakTarget(curr->id(), task->later);
         parent.stack.push_back(task);
       }
+      std::vector<opt::Instruction*> insts;
       curr->ForEachInst([&](opt::Instruction* inst) {
-        parent.stack.push_back(std::make_shared<TriageTask>(parent, inst));
+        insts.push_back(inst);
       });
+
+      std::reverse(insts.begin(), insts.end());
+      for (auto& inst : insts)
+      {
+        parent.stack.push_back(std::make_shared<TriageTask>(parent, inst));
+      }
     }
 
-    void Run() override { parent.AddBranch(parent.GetCurrBlock(), later); }
+    void Run() override { 
+        parent.AddBranch(parent.GetCurrBlock(), later);
+        parent.SetCurrBlock(later);
+    }
   };
 
   struct LoopTask : Task {
@@ -172,6 +182,7 @@ struct Triager {
         auto* after = parent.StartBlock();
         parent.AddBranch(if_true_end, after);
         parent.AddBranch(if_false_end, after);
+        //after->code->AddInstruction(std::make_unique<opt::Instruction>());
       }
     }
   };
@@ -226,8 +237,8 @@ struct Triager {
           block->end()->opcode() != SpvOpUnreachable) {
         // if function returns void insert return op else insert unreachable
         // op.
-        block->AddInstruction(FunctionReturnsVoid() ? make_return()
-                                                    : make_unreachable());
+        //block->AddInstruction(FunctionReturnsVoid() ? make_return()
+          //                                          : make_unreachable());
       }
     });
 
@@ -247,6 +258,8 @@ struct Triager {
       UnreachableTask::Handle(*this, curr);
     } else if (IsSwitchInst(curr)) {
       SwitchTask::Handle(*this, curr);
+    } else if (!IsLabelInst(curr)) { // no control flow! and skip labels
+      GetCurrNativeBlock()->AddInstruction(CopyInst(curr));
     }
   }
   void Triage(opt::BasicBlock* curr) { BlockTask::Handle(*this, curr); }
@@ -305,27 +318,28 @@ struct Triager {
   Block* GetBreakTarget(std::uint32_t id) { return break_targets[id]; }
 
   std::uint32_t GetBranchTargetID(opt::Instruction* branch_inst) {
-    return (int)branch_inst->GetOperand(0).AsLiteralUint64();
+    return branch_inst->GetSingleWordOperand(0);
   }
   Operand GetConditionalBranchCondition(opt::Instruction* branch_inst) {
     return branch_inst->GetOperand(0);
   }
   opt::BasicBlock* GetConditionalBranchTrueBranch(
       opt::Instruction* branch_inst) {
-    return function.FindBlock((int)branch_inst->GetOperand(1).AsLiteralUint64())
+    return function
+        .FindBlock(branch_inst->GetSingleWordOperand(1))
         .Get()
         ->get();  // VIK-TODO: Is this valid? can you find a block by using the
                   // operand like this? is it the same id?
   }
   opt::BasicBlock* GetConditionalBranchFalseBranch(
       opt::Instruction* branch_inst) {
-    return function.FindBlock((int)branch_inst->GetOperand(2).AsLiteralUint64())
+    return function.FindBlock(branch_inst->GetSingleWordOperand(2))
         .Get()
         ->get();  // VIK-TODO: Is this valid?
   }
 
   bool IsLoopInst(opt::Instruction* inst) {
-    // This is super problematic :cry:
+    // This is super problematic
     // possible solution:
     // If the instruction is opbranchconditional and the next LAST branch in the
     // basic block targets self's target... This becomes problematic with
@@ -340,7 +354,7 @@ struct Triager {
     return inst->opcode() == SpvOpReturn || inst->opcode() == SpvOpReturnValue;
   }
   bool IsConditionalBranchInst(opt::Instruction* inst) {
-    return inst->opcode() == SpvOpBranch;
+    return inst->opcode() == SpvOpBranchConditional;
   }
   bool IsUnreachableInst(opt::Instruction* inst) {
     return inst->opcode() == SpvOpUnreachable;
@@ -348,9 +362,12 @@ struct Triager {
   bool IsSwitchInst(opt::Instruction* inst) {
     return inst->opcode() == SpvOpSwitch;
   }
+  bool IsLabelInst(opt::Instruction* inst) {
+    return inst->opcode() == SpvOpLabel;
+  }
 };
 
-struct Triage {
+/*struct Triage {
   std::unordered_map<std::uint32_t, Block*> block_list;
   std::uint32_t entry_id = 0;
 
@@ -437,7 +454,7 @@ struct Triage {
   }
 
   Block* GetEntry() { return block_list[entry_id]; }
-};
+};*/
 
 struct Structurizer::Impl {
   Impl(spv_target_env env, spv_validator_options options)

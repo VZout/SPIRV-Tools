@@ -36,10 +36,19 @@ Relooper::~Relooper() {
 
 // utility
 static opt::Operand::OperandData CreateOperandDataFromU64(std::size_t val) {
-  utils::SmallVector<uint32_t, 2> ret{
+  utils::SmallVector<uint32_t, 2> ret(std::vector<uint32_t>{
       (std::uint32_t)((val & 0xFFFFFFFF00000000LL) >> 32),  // lower int_type_id
       (std::uint32_t)(val & 0xFFFFFFFFLL),  // higher int_type_id
-  };
+  });
+
+  return ret;
+}
+
+static opt::Operand::OperandData CreateOperandDataFromU32(std::uint32_t val) {
+  
+    utils::SmallVector<uint32_t, 2> ret(std::vector<uint32_t>{
+      val
+    });
 
   return ret;
 }
@@ -105,17 +114,6 @@ void Relooper::Calculate(Block* entry) {
   auto pre_optimizer = PreOptimizer(this);
   auto live = pre_optimizer.FindLive(entry);
 
-  int id = 0;
-  auto recursive_explode = [&](Block* b) {
-    for (auto c : b->branches_out) {
-      c.first->id = id++;
-      blocks.emplace_back(c.first);
-    }
-  };
-  entry->id = id++;
-  blocks.emplace_back(entry);
-  recursive_explode(entry);
-
   // Add incoming branches from live blocks, ignoring dead code
   for (unsigned i = 0; i < blocks.size(); i++) {
     Block* curr = blocks[i].get();
@@ -158,6 +156,13 @@ std::unique_ptr<opt::Function> Relooper::Render(opt::IRContext* new_context,
   return func;
 }
 
+Branch* Relooper::AddBranch(Operand condition, opt::BasicBlock* code) {
+  auto branch = std::make_unique<Branch>(condition, code);
+  auto ptr = branch.get();
+  branches.emplace_back(std::move(branch));
+  return ptr;
+}
+
 Block* Relooper::NewBlock() {
 
       std::unique_ptr<opt::Instruction> label(
@@ -165,7 +170,7 @@ Block* Relooper::NewBlock() {
   opt::BasicBlock* bb = new opt::BasicBlock(std::move(label)); // VIK-TODO: mem leak
 
   auto block =
-      std::make_unique<Block>(bb, NULL_OPERAND);  // VIK_TODO: SWITCH OMITTED.
+      std::make_unique<Block>(this, bb, NULL_OPERAND);  // VIK_TODO: SWITCH OMITTED.
   block->id = block_id_counter++;
   auto ptr = block.get();
   blocks.push_back(std::move(block));
@@ -176,7 +181,7 @@ Block* Relooper::NewBlock() {
 Block* Relooper::AddBlock(opt::BasicBlock* code,
                           opt::BasicBlock* switch_condition) {
 
-  auto block = std::make_unique<Block>(code, NULL_OPERAND); // VIK_TODO: SWITCH OMITTED.
+  auto block = std::make_unique<Block>(this, code, NULL_OPERAND); // VIK_TODO: SWITCH OMITTED.
   block->id = block_id_counter++;
   auto ptr = block.get();
   blocks.push_back(std::move(block));
@@ -190,10 +195,18 @@ void Relooper::ForEachBlock(std::function<void(Block*)> lambda) {
   }
 }
 
-Block::Block(opt::BasicBlock* code, Operand switch_condition)
-    : code(code),
+Block::Block(Relooper* relooper, opt::BasicBlock* code, Operand switch_condition)
+    : relooper(relooper),
+    code(code),
       switch_condition(switch_condition),
-      is_checked_multiple_entry(false) {}
+      is_checked_multiple_entry(false) {
+
+// validate correctness of instructions. i.e no labels and no return ops.
+
+   code->ForEachInst([&](opt::Instruction* inst) {
+       //inst->is
+    });
+}
 
 Block::~Block() {
   //for (auto& iter : processed_branches_out) {
@@ -206,9 +219,12 @@ Block::~Block() {
 
 void Block::AddBranchTo(Block* target, Operand condition,
                         opt::BasicBlock* code) {
+
+
   // cannot add more than one branch to the same target
   assert(!contains(branches_out, target));
   branches_out[target] = new Branch(condition, code);
+  branches_out[target] = relooper->AddBranch(condition, code);
 }
 
 void Block::AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
@@ -231,6 +247,10 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
 
   if (code) {
     ret->AddInstructions(code);
+    std::cout << "Detected code:\n";
+    code->ForEachInst([&](opt::Instruction* inst) {
+          std::cout << inst->opcode() << std::endl;
+    });
   }
 
   if (!processed_branches_out.size()) {
@@ -330,6 +350,11 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
           }
         } else {
           auto now = builder.MakeIf(details->condition, curr_content);
+
+          for (std::uint32_t i = 0; i < now->tail()->NumOperands(); i++) {
+            std::cout << now->tail()->GetOperand(i).words[0] << std::endl;
+          }
+
           finalize_stack.push_back(now);
           if (!curr_if) {
             assert(!root);
@@ -363,6 +388,11 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
   }
   // Emit switch
   else {
+    std::cout << "ABORT ABORT WE DO NOT SUPPORT SWITCHES";
+  }
+
+   if (root) {
+    ret->AddInstructions(root);
   }
 
   return ret;
@@ -400,7 +430,12 @@ opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
 // TODO-VIK: duplicate
 std::unique_ptr<opt::Instruction> RelooperBuilder::NewLabel(uint32_t label_id) {
   std::unique_ptr<opt::Instruction> newLabel(
-      new opt::Instruction(GetContext(), SpvOpLabel, 0, label_id, {}));
+      new opt::Instruction(GetContext(), SpvOpLabel, 0, 300 + label_id, {}));
+
+  if (label_id == 48) {
+    int x = 0;
+  }
+
   return std::move(newLabel);
 }
 
@@ -690,7 +725,7 @@ opt::BasicBlock* RelooperBuilder::MakeIf(opt::Operand condition,
   std::vector<opt::Operand> operands = {
       condition,  // condition
       opt::Operand(SPV_OPERAND_TYPE_ID,
-                   CreateOperandDataFromU64(true_branch->id())),
+                   CreateOperandDataFromU32(true_branch->id())),
   };
 
   if (false_branch) {
@@ -698,7 +733,7 @@ opt::BasicBlock* RelooperBuilder::MakeIf(opt::Operand condition,
         SPV_OPERAND_TYPE_ID, CreateOperandDataFromU64(false_branch->id())));
   }
   auto inst = std::make_unique<opt::Instruction>(
-      GetContext(), SpvOp::SpvOpBranchConditional, true, true, operands);
+      GetContext(), SpvOp::SpvOpBranchConditional, false, false, operands);
 
   ret->AddInstruction(std::move(inst));
 
@@ -708,13 +743,13 @@ opt::BasicBlock* RelooperBuilder::MakeIf(opt::Operand condition,
 void RelooperBuilder::SetIfFalse(opt::Instruction* in,
                                  opt::BasicBlock* false_branch) {
   in->AddOperand(opt::Operand(SPV_OPERAND_TYPE_ID,
-                              CreateOperandDataFromU64(false_branch->id())));
+                              CreateOperandDataFromU32(false_branch->id())));
 }
 
 void RelooperBuilder::SetIfFalse(opt::BasicBlock* in,
                                  opt::BasicBlock* false_branch) {
   in->tail()->AddOperand(opt::Operand(
-      SPV_OPERAND_TYPE_ID, CreateOperandDataFromU64(false_branch->id())));
+      SPV_OPERAND_TYPE_ID, CreateOperandDataFromU32(false_branch->id())));
 }
 
 std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeSequence(

@@ -101,6 +101,7 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
 
 struct Shape;
 struct Block;
+class Relooper;
 
 using Operand = opt::Operand;
 
@@ -275,6 +276,7 @@ using BlockList = std::list<Block*>;
 // Represents a basic block of code - some instructions that end with a
 // control flow modifier (a branch, return or throw).
 struct Block {
+  Relooper* relooper;
   // Branches become processed after we finish the shape relevant to them. For
   // example, when we recreate a loop, branches to the loop start become
   // continues and are now processed. When we calculate what shape to generate
@@ -296,7 +298,7 @@ struct Block {
   // variable
   bool is_checked_multiple_entry;
 
-  Block(opt::BasicBlock* code, Operand switch_condition = NULL_OPERAND);
+  Block(Relooper* relooper, opt::BasicBlock* code, Operand switch_condition = NULL_OPERAND);
   ~Block();
 
   // Add a branch: if the condition holds we branch (or if null, we branch if
@@ -398,6 +400,8 @@ class Relooper {
   std::unique_ptr<opt::Function> Render(opt::IRContext* new_context,
                                         opt::Function& old_function);
 
+  Branch* AddBranch(Operand condition, opt::BasicBlock* code);
+
   Block* NewBlock();
     Block* AddBlock(opt::BasicBlock* code, opt::BasicBlock* switch_condition);
 
@@ -419,6 +423,7 @@ class Relooper {
   opt::IRContext* context;
   std::deque<std::unique_ptr<Block>> blocks;
   std::deque<std::unique_ptr<Shape>> shapes;
+  std::deque<std::unique_ptr<Branch>> branches;
   Shape* root;
   bool min_size;
   std::uint32_t block_id_counter;

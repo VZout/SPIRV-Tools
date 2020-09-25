@@ -452,7 +452,9 @@ spv_result_t Parser::parseOperand(size_t inst_offset,
 
     case SPV_OPERAND_TYPE_ID:
     case SPV_OPERAND_TYPE_OPTIONAL_ID:
-      if (!word) return diagnostic(SPV_ERROR_INVALID_ID) << "Id is 0";
+      if (!word) 
+
+          return diagnostic(SPV_ERROR_INVALID_ID) << "Id is 0";
       parsed_operand.type = SPV_OPERAND_TYPE_ID;
 
       if (opcode == SpvOpExtInst && parsed_operand.offset == 3) {
