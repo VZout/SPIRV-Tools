@@ -145,15 +145,18 @@ std::unique_ptr<opt::Function> Relooper::Render(opt::IRContext* new_context,
   auto def_inst = old_function.DefInst().CloneSPTR(new_context);
   auto def_ptr = def_inst.get();
   auto func = std::make_unique<opt::Function>(std::move(def_inst));
+  old_function.ForEachParam([&](opt::Instruction* param) {
+    func->AddParameter(param->CloneSPTR(new_context));
+  });
 
   auto builder = RelooperBuilder(new_context, def_ptr,
                                  opt::IRContext::Analysis::kAnalysisNone);
 
   auto basic_block = root->Render(builder, func.get(), false);
-
+  
   func->SetFunctionEnd(old_function.EndInst()->CloneSPTR(new_context));
 
-  return func;
+  return std::move(func);
 }
 
 Branch* Relooper::AddBranch(Operand condition, opt::BasicBlock* code) {
@@ -175,6 +178,10 @@ Block* Relooper::NewBlock() {
   auto ptr = block.get();
   blocks.push_back(std::move(block));
 
+  if (ptr->id == 59) {
+    int x = 0;
+  }
+
   return ptr;
 }
 
@@ -186,6 +193,10 @@ Block* Relooper::AddBlock(opt::BasicBlock* code,
   auto ptr = block.get();
   blocks.push_back(std::move(block));
   
+    if (ptr->id == 48) {
+    int x = 0;
+  }
+
   return ptr;   
 }
 
@@ -203,8 +214,8 @@ Block::Block(Relooper* relooper, opt::BasicBlock* code, Operand switch_condition
 
 // validate correctness of instructions. i.e no labels and no return ops.
 
-   code->ForEachInst([&](opt::Instruction* inst) {
-       //inst->is
+   auto x = 0;
+    code->ForEachInst([&](opt::Instruction* inst) { x++;
     });
 }
 
@@ -237,8 +248,9 @@ void Block::AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
 std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
                                                opt::Function* new_func,
                                                bool in_loop) {
+
   auto ret = std::make_unique<opt::BasicBlock>(
-      builder.NewLabel(builder.GetContext()->TakeNextUniqueId()));
+        builder.NewLabel(builder.GetContext()->TakeNextUniqueId()));
 
   if (is_checked_multiple_entry && in_loop) {
     ret->AddInstruction(builder.makeSetLabel(
@@ -246,14 +258,10 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
   }
 
   if (code) {
-    ret->AddInstructions(code);
-    std::cout << "Detected code:\n";
-    code->ForEachInst([&](opt::Instruction* inst) {
-          std::cout << inst->opcode() << std::endl;
-    });
+    ret->AddInstructions(code); // TODO: Why is this not doing anything?
   }
 
-  if (!processed_branches_out.size()) {
+  if (processed_branches_out.empty()) {
     return ret;
   }
 
@@ -291,7 +299,7 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
   // Emit a list of if/else
   if (switch_condition == NULL_OPERAND) {
     opt::BasicBlock* curr_if = nullptr;
-    std::vector<opt::BasicBlock*> finalize_stack;
+    std::vector<std::unique_ptr<opt::BasicBlock>> finalize_stack;
     opt::BasicBlock* remaining_conditions = nullptr;
 
     for (auto it = processed_branches_out.begin();; it++) {
@@ -319,12 +327,12 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
       bool is_default = it == processed_branches_out.end();
       if (set_curr_label || details->Type != Branch::FlowType::Direct ||
           has_fused_content) {
-        curr_content = details->Render(builder, target, set_curr_label);
+        curr_content = details->Render(builder, target, new_func, set_curr_label);
 
         if (has_fused_content) {
           curr_content = builder.Blockify(
               curr_content, fused->inner_map.find(target->id)
-                                ->second->Render(builder, new_func, in_loop));
+                                ->second->Render(builder, nullptr, in_loop));
         }
       }
       // There is nothing to show in this branch, omit the condition
@@ -332,12 +340,13 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
         if (is_default) {
           opt::BasicBlock* now = nullptr;
           if (remaining_conditions) {
-            now = builder.MakeIf(
+            auto ifblock = builder.MakeIf(  
                 BB_INTO_OPERAND(remaining_conditions),
                 curr_content);  // VIK-TODO: This should probably return a basic
                                 // block instead. or, return instruct and append
                                 // it here to the curr_content
-            finalize_stack.push_back(now);
+            finalize_stack.push_back(std::move(ifblock));
+            now = ifblock.get();
           } else {
             now = curr_content;
           }
@@ -349,13 +358,10 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
                 curr_if, now);  // VIK-TODO: Make a builder wrapper for this.
           }
         } else {
-          auto now = builder.MakeIf(details->condition, curr_content);
-
-          for (std::uint32_t i = 0; i < now->tail()->NumOperands(); i++) {
-            std::cout << now->tail()->GetOperand(i).words[0] << std::endl;
-          }
-
-          finalize_stack.push_back(now);
+          auto ifblock = builder.MakeIf(details->condition, curr_content);
+          auto now = ifblock.get();
+          builder.trash.push_back(std::move(ifblock));
+          //finalize_stack.push_back(std::move(ifblock));
           if (!curr_if) {
             assert(!root);
             root = curr_if = now;
@@ -383,6 +389,9 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
 
     // Finalize the if chains.
     // VIK-TODO: Irrelevant for us.
+    for (auto& bb : finalize_stack) {
+      new_func->AddBasicBlock(std::move(bb));
+    }
     finalize_stack.clear();
 
   }
@@ -405,8 +414,8 @@ Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
     : condition(NULL_OPERAND), code(code), switch_values(switch_values) {}
 
 opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
-                                bool set_label) {
-  opt::BasicBlock* ret = new opt::BasicBlock(builder.NewLabel(target->id)); // VIK-TODO: Wrong label id? prefer unique
+                                opt::Function* new_func, bool set_label) {
+  auto ret = std::make_unique<opt::BasicBlock>(builder.NewLabel(builder.GetContext()->TakeNextUniqueId())); // VIK-TODO: Wrong label id? prefer unique
   if (set_label) {
     auto label = builder.makeSetLabel(target->id);
     ret->AddInstruction(std::move(label));
@@ -424,16 +433,19 @@ opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
     // VIK-TODO: make continue shape.
   }
 
-  return ret;
+  auto ptr = ret.get();
+  new_func->AddBasicBlock(std::move(ret));
+  return ptr;
 }
 
 // TODO-VIK: duplicate
 std::unique_ptr<opt::Instruction> RelooperBuilder::NewLabel(uint32_t label_id) {
   std::unique_ptr<opt::Instruction> newLabel(
-      new opt::Instruction(GetContext(), SpvOpLabel, 0, 300 + label_id, {}));
+      new opt::Instruction(GetContext(), SpvOpLabel, 0, label_id, {}));
 
-  if (label_id == 48) {
+    if (label_id == 53 || label_id == 47) {
     int x = 0;
+
   }
 
   return std::move(newLabel);
@@ -451,7 +463,9 @@ std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeNewBlockFromBlock(
 
 opt::BasicBlock* RelooperBuilder::Blockify(opt::BasicBlock* lh,
                                            opt::BasicBlock* rh) {
+
   lh->AddInstructions(rh);
+
   return lh;
 }
 
@@ -714,18 +728,21 @@ opt::BasicBlock* RelooperBuilder::MakeBinary(BinaryType type,
   return ret;
 }
 
-opt::BasicBlock* RelooperBuilder::MakeIf(opt::Operand condition,
+std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeIf(
+    opt::Operand condition,
                                          opt::BasicBlock* true_branch,
                                          opt::BasicBlock* false_branch) {
+
+    auto unique = GetContext()->TakeNextUniqueId();
   // VIK-TODO: Do I need a label here?
-  std::unique_ptr<opt::Instruction> label =
-      NewLabel(GetContext()->TakeNextUniqueId());
-  opt::BasicBlock* ret = new opt::BasicBlock(std::move(label));
+  std::unique_ptr<opt::Instruction> label = NewLabel(unique);
+  auto ret = std::make_unique<opt::BasicBlock>(std::move(label));
 
   std::vector<opt::Operand> operands = {
       condition,  // condition
       opt::Operand(SPV_OPERAND_TYPE_ID,
-                   CreateOperandDataFromU32(true_branch->id())),
+                   CreateOperandDataFromU32(
+                       true_branch->id())),
   };
 
   if (false_branch) {
@@ -771,17 +788,22 @@ opt::Operand RelooperBuilder::OperandFromBasicBlock(opt::BasicBlock* bb) {
 
 opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
                                      opt::Function* new_func, bool in_loop) {
-  auto ret = inner->Render(builder, new_func, in_loop);
+    auto ret = inner->Render(builder, new_func, in_loop);
   ret = HandleFollowupMultiplies(std::move(ret), this, builder, new_func,
                                  in_loop);
   if (next) {
-    ret->AddInstructions(next->Render(builder, new_func, in_loop));
+    //ret->AddInstructions(next->Render(builder, new_func, in_loop));
     ret = builder.MakeSequence(ret.get(),
                                next->Render(builder, new_func, in_loop));
   }
 
   auto ptr = ret.get();
-  new_func->AddBasicBlock(std::move(ret));
+  if (new_func) {
+    new_func->AddBasicBlock(std::move(ret));
+  } else {
+    builder.trash.push_back(std::move(ret));
+  }
+
   return ptr;
 }
 

@@ -54,6 +54,15 @@ Shape* Analyzer::MakeSimple(BlockSet& blocks, Block* inner,
   printf("creating simple block with block #%d\n", inner->id);
   SimpleShape* Simple = parent->AddShape<SimpleShape>();
   Simple->inner = inner;
+
+  
+  if (inner->id == 9) {
+    inner->code->ForEachInst([&](auto inst) {
+      std::cout << "whohay" << inst->opcode() << std::endl;
+    });
+  }
+
+
   inner->parent = Simple;
   if (blocks.size() > 1) {
     blocks.erase(inner);

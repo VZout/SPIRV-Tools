@@ -49,6 +49,9 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
     AndInt32,
   };
 
+    std::vector<std::unique_ptr<opt::BasicBlock>>
+      trash;  // vector contains trash and code is trash
+
   // Creates an InstructionBuilder, all new instructions will be inserted before
   // the instruction |insert_before|.
   RelooperBuilder(opt::IRContext* context, opt::Instruction* insert_before,
@@ -83,7 +86,7 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
       BinaryType type, opt::Operand lh_cond, opt::Operand rh_cond);  // returning a basic block just
                                                 // to make things easier for me.
   // allows creating a conditional branch without a false_branch, this is not allowed in spirv. make sure it always has a false branch with `SetIfFalse`.
-  opt::BasicBlock* MakeIf(opt::Operand condition, opt::BasicBlock* true_branch, opt::BasicBlock* false_branch = nullptr);
+  std::unique_ptr<opt::BasicBlock> MakeIf(opt::Operand condition, opt::BasicBlock* true_branch, opt::BasicBlock* false_branch = nullptr);
   void SetIfFalse(
       opt::Instruction* in, opt::BasicBlock* false_branch);
   void SetIfFalse(opt::BasicBlock* in, opt::BasicBlock* false_branch);
@@ -142,6 +145,7 @@ struct Branch {
   Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code);
 
   opt::BasicBlock* Render(RelooperBuilder& builder, Block* target,
+                          opt::Function* new_func,
                            bool set_label);
 };
 
