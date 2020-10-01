@@ -571,6 +571,8 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
         relooper->Render(target_irContext.get(), function));
   }
 
+  std::cout << "\n\n";
+
   std::vector<uint32_t>* structurized_binary = new std::vector<uint32_t>();
   target_irContext->module()->ToBinary(structurized_binary,
                                        /* skip_nop = */ true);

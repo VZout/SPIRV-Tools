@@ -245,6 +245,7 @@ void Block::AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
   branches_out[target] = new Branch(std::move(values), code);
 }
 
+// possible fix: add to func on create. don't return smart ptr. handlemultiples would be problem. but should investigate.
 std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
                                                opt::Function* new_func,
                                                bool in_loop) {
@@ -390,7 +391,7 @@ std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
     // Finalize the if chains.
     // VIK-TODO: Irrelevant for us.
     for (auto& bb : finalize_stack) {
-      new_func->AddBasicBlock(std::move(bb));
+      new_func->AddBasicBlock(std::move(bb)); // doesn't do anything
     }
     finalize_stack.clear();
 
@@ -443,7 +444,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::NewLabel(uint32_t label_id) {
   std::unique_ptr<opt::Instruction> newLabel(
       new opt::Instruction(GetContext(), SpvOpLabel, 0, label_id, {}));
 
-    if (label_id == 53 || label_id == 47) {
+    if (label_id == 49 || label_id == 47) {
     int x = 0;
 
   }
