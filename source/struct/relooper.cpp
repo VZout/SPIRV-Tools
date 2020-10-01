@@ -246,12 +246,19 @@ void Block::AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
 }
 
 // possible fix: add to func on create. don't return smart ptr. handlemultiples would be problem. but should investigate.
-std::unique_ptr<opt::BasicBlock> Block::Render(RelooperBuilder& builder,
+opt::BasicBlock* Block::Render(RelooperBuilder& builder,
                                                opt::Function* new_func,
                                                bool in_loop) {
 
-  auto ret = std::make_unique<opt::BasicBlock>(
+  auto ret_org = std::make_unique<opt::BasicBlock>(
         builder.NewLabel(builder.GetContext()->TakeNextUniqueId()));
+  auto ret = ret_org.get();
+  if (new_func) {
+    new_func->AddBasicBlock(std::move(ret_org));
+  
+  } else {
+    builder.trash.push_back(std::move(ret_org));
+  }
 
   if (is_checked_multiple_entry && in_loop) {
     ret->AddInstruction(builder.makeSetLabel(
@@ -790,22 +797,18 @@ opt::Operand RelooperBuilder::OperandFromBasicBlock(opt::BasicBlock* bb) {
 opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
                                      opt::Function* new_func, bool in_loop) {
     auto ret = inner->Render(builder, new_func, in_loop);
-  ret = HandleFollowupMultiplies(std::move(ret), this, builder, new_func,
-                                 in_loop);
+  //ret = HandleFollowupMultiplies(std::move(ret), this, builder, new_func,
+    //                             in_loop);
   if (next) {
     //ret->AddInstructions(next->Render(builder, new_func, in_loop));
-    ret = builder.MakeSequence(ret.get(),
+    auto ret2 = builder.MakeSequence(ret,
                                next->Render(builder, new_func, in_loop));
+    auto ptr = ret2.get();
+    new_func->AddBasicBlock(std::move(ret2));
+    return ptr;
   }
 
-  auto ptr = ret.get();
-  if (new_func) {
-    new_func->AddBasicBlock(std::move(ret));
-  } else {
-    builder.trash.push_back(std::move(ret));
-  }
-
-  return ptr;
+  return ret;
 }
 
 opt::BasicBlock* MultipleShape::Render(RelooperBuilder& builder,

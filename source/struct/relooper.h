@@ -325,7 +325,7 @@ struct Block {
   void AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
                          opt::BasicBlock* code = nullptr);
 
-  std::unique_ptr<opt::BasicBlock> Render(RelooperBuilder& builder,
+  opt::BasicBlock* Render(RelooperBuilder& builder,
                                           opt::Function* new_func,
                                           bool in_loop);
 };

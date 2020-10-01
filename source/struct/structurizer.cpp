@@ -537,6 +537,12 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
         extension.CloneSPTR(target_irContext.get()));
   }
 
+  // entry points
+  for (auto& entry_point : ir_context->module()->entry_points()) {
+    target_irContext->module()->AddExtension(
+        entry_point.CloneSPTR(target_irContext.get()));
+  }
+
   // execution modes
   for (auto& mode : ir_context->module()->execution_modes()) {
     target_irContext->module()->AddExecutionMode(
