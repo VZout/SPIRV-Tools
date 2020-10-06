@@ -22,14 +22,19 @@ BlockSet PreOptimizer::FindLive(Block* entry) {
   BlockList to_investigate;
 
   to_investigate.push_back(entry);
-  while (to_investigate.size() > 0) {
+  while (!to_investigate.empty()) {
     Block* Curr = to_investigate.front();
+
     to_investigate.pop_front();
     if (contains(live, Curr)) {
       continue;
     }
     live.insert(Curr);
     for (auto& iter : Curr->branches_out) {
+      if (!iter.first) {
+        __debugbreak();
+      }
+
       to_investigate.push_back(iter.first);
     }
   }

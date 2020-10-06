@@ -53,15 +53,15 @@ static opt::Operand::OperandData CreateOperandDataFromU32(std::uint32_t val) {
   return ret;
 }
 
-static std::unique_ptr<opt::BasicBlock> HandleFollowupMultiplies(
-    std::unique_ptr<opt::BasicBlock> in, Shape* parent,
+static opt::BasicBlock* HandleFollowupMultiplies(
+    opt::BasicBlock* in, Shape* parent,
     RelooperBuilder& builder, opt::Function* new_func, bool in_loop) {
   if (!parent->next) {
-    return std::move(in);
+    return in;
   }
 
   auto curr = std::move(in);
-  // VIK-TODO: This is useless since we will always have a block
+  // VIK-TODO: This is useless since we will always have a block WHAT ABOUT THE NULLPTR CASE?
   // if (!curr || curr->name.is()) {
   //  curr = Builder.makeBlock(Ret);
   //}
@@ -76,7 +76,7 @@ static std::unique_ptr<opt::BasicBlock> HandleFollowupMultiplies(
       int id = iter.first;
       Shape* body = iter.second;
       // VIK-TODO: insert debug name for current?
-      curr = builder.MakeNewBlockFromBlock(curr.get());
+      //curr = builder.MakeNewBlockFromBlock(curr.get());
       curr->AddInstructions(
           (body->Render(builder, new_func,
                         in_loop)));  // VIK-TODO: Adding here is correct right?
@@ -91,7 +91,7 @@ static std::unique_ptr<opt::BasicBlock> HandleFollowupMultiplies(
     if (simple) {
       // breaking on the next block's id takes us out, where we
       // will reach its rendering
-      // VIK-TODO: insert debug name for current?
+      //curr->GetLabel()->SetResultId(simple->inner->code->id() + 10000);
     } else {
       // add one break target per entry for the loop
       auto* loop = Shape::IsLoop(parent->next);
@@ -102,12 +102,12 @@ static std::unique_ptr<opt::BasicBlock> HandleFollowupMultiplies(
       } else {
         for (auto* entry : loop->entries) {
           // VIK-TODO: insert debug name for current?
-          curr = builder.MakeNewBlockFromBlock(curr.get());
+          //curr = builder.MakeNewBlockFromBlock(curr.get());
         }
       }
     }
   }
-  return std::move(curr);
+  return curr;
 }
 
 void Relooper::Calculate(Block* entry) {
@@ -436,7 +436,13 @@ opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
     ret->AddInstruction(std::move(builder.makeSetLabel(target->id)));
   }
   if (Type == FlowType::Break) {
-    // builder.makeBreak(); // VIK-TODO: Branch back to merge header?
+    std::vector<opt::Operand> operands = {
+        condition,  // condition
+        opt::Operand(SPV_OPERAND_TYPE_ID,
+                     CreateOperandDataFromU32(target->code->id())),
+    };
+
+    ret->AddInstruction(std::make_unique<opt::Instruction>(builder.GetContext(), SpvOpBranch, false, false, operands));
   } else if (Type == FlowType::Continue) {
     // VIK-TODO: make continue shape.
   }
@@ -451,7 +457,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::NewLabel(uint32_t label_id) {
   std::unique_ptr<opt::Instruction> newLabel(
       new opt::Instruction(GetContext(), SpvOpLabel, 0, label_id, {}));
 
-    if (label_id == 49 || label_id == 47) {
+    if (label_id == 2189) {
     int x = 0;
 
   }
@@ -797,12 +803,13 @@ opt::Operand RelooperBuilder::OperandFromBasicBlock(opt::BasicBlock* bb) {
 opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
                                      opt::Function* new_func, bool in_loop) {
     auto ret = inner->Render(builder, new_func, in_loop);
-  //ret = HandleFollowupMultiplies(std::move(ret), this, builder, new_func,
-    //                             in_loop);
+
   if (next) {
-    //ret->AddInstructions(next->Render(builder, new_func, in_loop));
-    auto ret2 = builder.MakeSequence(ret,
-                               next->Render(builder, new_func, in_loop));
+    auto new_ret =
+        HandleFollowupMultiplies(ret, this, builder, new_func, in_loop);
+    // ret->AddInstructions(next->Render(builder, new_func, in_loop));
+    auto ret2 =
+        builder.MakeSequence(new_ret, next->Render(builder, new_func, in_loop));
     auto ptr = ret2.get();
     new_func->AddBasicBlock(std::move(ret2));
     return ptr;

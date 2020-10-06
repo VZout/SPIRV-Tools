@@ -72,6 +72,8 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
       opt::BasicBlock* block);
   opt::BasicBlock* Blockify(opt::BasicBlock* lh, opt::BasicBlock* rh);
 
+  std::uint32_t GetBlockBreakName(std::uint32_t id);
+
   std::uint32_t MakeType(SpvOp op);
   std::uint32_t MakeLabelType();
   std::uint32_t MakeBoolType();

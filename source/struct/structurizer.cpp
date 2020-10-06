@@ -193,13 +193,17 @@ struct Triager {
       // add the branch. note how if the condition is false, it is the right
       // value there as well
       auto* before = parent.GetCurrBlock();
+
+      auto target = parent.GetBreakTarget(parent.GetBranchTargetID(curr));
+      bool is_break = target != nullptr;
+      if (!is_break) {
+        target = parent.StartBlock();
+      }
+
       parent.AddBranch(before,
-                       parent.GetBreakTarget(parent.GetBranchTargetID(curr)),
-                       NULL_OPERAND);
-      if (/*curr->condition*/ false) {  // SPIRV's OpBranch is unconditional.
-        auto* after = parent.StartBlock();
-        parent.AddBranch(before, after);
-      } else {
+                       target);
+
+      if (is_break) {
         parent.StopControlFlow();
       }
     }
@@ -315,7 +319,11 @@ struct Triager {
     break_targets.insert({id, b});
   }
 
-  Block* GetBreakTarget(std::uint32_t id) { return break_targets[id]; }
+  Block* GetBreakTarget(std::uint32_t id) { 
+      auto target = break_targets[id];
+
+      return target;
+  }
 
   std::uint32_t GetBranchTargetID(opt::Instruction* branch_inst) {
     return branch_inst->GetSingleWordOperand(0);

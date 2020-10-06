@@ -44,7 +44,7 @@ int main(int argc, const char** argv) {
       "OpReturn "
       "OpFunctionEnd ";*/
 
-  std::ifstream ifs("test.spv");
+  std::ifstream ifs("test.spvasm");
   std::string source((std::istreambuf_iterator<char>(ifs)),
                       (std::istreambuf_iterator<char>()));
 
