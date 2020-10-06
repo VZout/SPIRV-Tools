@@ -187,7 +187,7 @@ struct Triager {
     }
   };
 
-  // VIK-TODO: Rename to branch target.
+  // VIK-TODO: Rename to branch target. also i added some custom logic that is now outdated I believe.
   struct BreakTask : public Task {
     static void Handle(Triager& parent, opt::Instruction* curr) {
       // add the branch. note how if the condition is false, it is the right
@@ -196,6 +196,7 @@ struct Triager {
 
       auto target = parent.GetBreakTarget(parent.GetBranchTargetID(curr));
       bool is_break = target != nullptr;
+      // this is fucked now
       if (!is_break) {
         target = parent.StartBlock();
       }
@@ -206,6 +207,24 @@ struct Triager {
       if (is_break) {
         parent.StopControlFlow();
       }
+    }
+  };
+
+  // Branch/Jump forward unconditionally
+    struct JumpTask : public Task {
+    static void Handle(Triager& parent, opt::Instruction* curr) {
+      // add the branch. note how if the condition is false, it is the right
+      // value there as well
+      auto* before = parent.GetCurrBlock();
+      auto target = parent.StartBlock();
+
+      // create triage task for next block if we haven't created a branch target for it yet (branch target means processed in this case)
+      if (parent.GetBreakTarget(parent.GetBranchTargetID(curr)) == nullptr) {
+      parent.stack.push_back(std::make_shared<TriageTask>(
+          parent, parent.GetUnconditionalBranchBranch(curr)));
+      }
+
+      parent.AddBranch(before, target);
     }
   };
 
@@ -254,7 +273,7 @@ struct Triager {
       LoopTask::Handle(*this, curr);
     } else if (IsConditionalBranchInst(curr)) {
       IfTask::Handle(*this, curr);
-    } else if (IsBranchInst(curr)) {
+    } else if (IsBreakInst(curr, *this)) {
       BreakTask::Handle(*this, curr);
     } else if (IsReturnInst(curr)) {
       ReturnTask::Handle(*this, curr);
@@ -262,7 +281,9 @@ struct Triager {
       UnreachableTask::Handle(*this, curr);
     } else if (IsSwitchInst(curr)) {
       SwitchTask::Handle(*this, curr);
-    } else if (!IsLabelInst(curr)) { // no control flow! and skip labels
+    } else if (IsJumpInst(curr, *this)) {
+      JumpTask::Handle(*this, curr);
+    } else if (!IsLabelInst(curr)) {  // no control flow! and skip labels
       GetCurrNativeBlock()->AddInstruction(CopyInst(curr));
     }
   }
@@ -339,6 +360,13 @@ struct Triager {
         ->get();  // VIK-TODO: Is this valid? can you find a block by using the
                   // operand like this? is it the same id?
   }
+  opt::BasicBlock* GetUnconditionalBranchBranch(
+      opt::Instruction* branch_inst) {
+    return function.FindBlock(branch_inst->GetSingleWordOperand(0))
+        .Get()
+        ->get();  // VIK-TODO: Is this valid? can you find a block by using the
+                  // operand like this? is it the same id?
+  }
   opt::BasicBlock* GetConditionalBranchFalseBranch(
       opt::Instruction* branch_inst) {
     return function.FindBlock(branch_inst->GetSingleWordOperand(2))
@@ -355,8 +383,24 @@ struct Triager {
     // whether a child branch branches to self enough?
     return false;
   }
-  bool IsBranchInst(opt::Instruction* inst) {
-    return inst->opcode() == SpvOpBranch;
+  bool IsBreakInst(opt::Instruction* inst, Triager& parent) {    
+    auto is_break = [&]() -> bool {
+      auto* before = parent.GetCurrBlock();
+      auto target = parent.GetBreakTarget(parent.GetBranchTargetID(inst));
+      return target != nullptr;
+    };
+
+    return inst->opcode() == SpvOpBranch && is_break();
+  }
+  // VIK-TODO: this stuff won't work for continue
+  bool IsJumpInst(opt::Instruction* inst, Triager& parent) {
+    auto is_break = [&]() -> bool {
+      auto* before = parent.GetCurrBlock();
+      auto target = parent.GetBreakTarget(parent.GetBranchTargetID(inst));
+      return target != nullptr;
+    };
+
+    return inst->opcode() == SpvOpBranch && !is_break();
   }
   bool IsReturnInst(opt::Instruction* inst) {
     return inst->opcode() == SpvOpReturn || inst->opcode() == SpvOpReturnValue;
@@ -520,11 +564,12 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
   target_irContext->SetMemoryModel(
       ir_context->module()->GetMemoryModel()->CloneSPTR(
           target_irContext.get()));
-  ir_context->module()->GetMemoryModel()->CloneSPTR(target_irContext.get());
 
   // types
   for (auto& ty : ir_context->module()->GetTypes()) {
-    target_irContext->module()->AddType(ty->CloneSPTR(target_irContext.get()));
+    auto type = ty->CloneSPTR(target_irContext.get());
+    relooper->AddUsedID(type->result_id());
+    target_irContext->module()->AddType(std::move(type));
   }
 
   // constants
@@ -581,8 +626,26 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
     // Restructure a function
     relooper->Calculate(entry);
 
-    target_irContext->AddFunction(
-        relooper->Render(target_irContext.get(), function));
+    auto func = relooper->Render(target_irContext.get(), function);
+
+    target_irContext->AddFunction(std::move(func));
+
+    std::vector<std::uint32_t> processed;
+    std::vector<SpvOp> kutcode;
+    // Check for duplicate id's
+    function.ForEachInst(
+        [&](auto inst) { 
+            if (inst->result_id() > 0) {
+
+                if (std::find(processed.begin(), processed.end(), inst->result_id()) !=
+                  processed.end()) {
+                    std::cout << "Found a dupli" << std::endl;
+                }
+
+                processed.push_back(inst->result_id());
+                kutcode.push_back(inst->opcode());
+            }
+    });
   }
 
   std::cout << "\n\n";

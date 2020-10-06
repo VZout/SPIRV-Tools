@@ -34,6 +34,17 @@ Relooper::~Relooper() {
   //}
 }
 
+void Relooper::AddUsedID(std::uint32_t id) { used_ids.push_back(id); }
+
+std::uint32_t Relooper::GetUniqueID() {
+  while (true) {
+    auto id = context->TakeNextUniqueId();
+    if (std::find(used_ids.begin(), used_ids.end(), id) == used_ids.end()) {
+      return id;
+    }
+  }
+}
+
 // utility
 static opt::Operand::OperandData CreateOperandDataFromU64(std::size_t val) {
   utils::SmallVector<uint32_t, 2> ret(std::vector<uint32_t>{
@@ -149,7 +160,7 @@ std::unique_ptr<opt::Function> Relooper::Render(opt::IRContext* new_context,
     func->AddParameter(param->CloneSPTR(new_context));
   });
 
-  auto builder = RelooperBuilder(new_context, def_ptr,
+  auto builder = RelooperBuilder(this, new_context, def_ptr,
                                  opt::IRContext::Analysis::kAnalysisNone);
 
   auto basic_block = root->Render(builder, func.get(), false);
@@ -169,7 +180,7 @@ Branch* Relooper::AddBranch(Operand condition, opt::BasicBlock* code) {
 Block* Relooper::NewBlock() {
 
       std::unique_ptr<opt::Instruction> label(
-      new opt::Instruction(context, SpvOpLabel, 0, context->TakeNextUniqueId(), {}));
+      new opt::Instruction(context, SpvOpLabel, 0, GetUniqueID(), {}));
   opt::BasicBlock* bb = new opt::BasicBlock(std::move(label)); // VIK-TODO: mem leak
 
   auto block =
@@ -178,7 +189,7 @@ Block* Relooper::NewBlock() {
   auto ptr = block.get();
   blocks.push_back(std::move(block));
 
-  if (ptr->id == 59) {
+  if (ptr->id == 43) {
     int x = 0;
   }
 
@@ -250,8 +261,7 @@ opt::BasicBlock* Block::Render(RelooperBuilder& builder,
                                                opt::Function* new_func,
                                                bool in_loop) {
 
-  auto ret_org = std::make_unique<opt::BasicBlock>(
-        builder.NewLabel(builder.GetContext()->TakeNextUniqueId()));
+  auto ret_org = std::make_unique<opt::BasicBlock>(builder.NewLabel(builder.GetUniqueID()));
   auto ret = ret_org.get();
   if (new_func) {
     new_func->AddBasicBlock(std::move(ret_org));
@@ -421,9 +431,10 @@ Branch::Branch(Operand condition, opt::BasicBlock* code)
 Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
     : condition(NULL_OPERAND), code(code), switch_values(switch_values) {}
 
+// VIK-TODO: opt function is used to determine whether to add the new block to the func. This is fucked if you have recursive blocks.
 opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
                                 opt::Function* new_func, bool set_label) {
-  auto ret = std::make_unique<opt::BasicBlock>(builder.NewLabel(builder.GetContext()->TakeNextUniqueId())); // VIK-TODO: Wrong label id? prefer unique
+  auto ret = std::make_unique<opt::BasicBlock>(builder.NewLabel(builder.GetUniqueID())); // VIK-TODO: Wrong label id? prefer unique
   if (set_label) {
     auto label = builder.makeSetLabel(target->id);
     ret->AddInstruction(std::move(label));
@@ -457,7 +468,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::NewLabel(uint32_t label_id) {
   std::unique_ptr<opt::Instruction> newLabel(
       new opt::Instruction(GetContext(), SpvOpLabel, 0, label_id, {}));
 
-    if (label_id == 2189) {
+    if (label_id == 43) {
     int x = 0;
 
   }
@@ -468,7 +479,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::NewLabel(uint32_t label_id) {
 std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeNewBlockFromBlock(
     opt::BasicBlock* block) {
   auto retval = std::make_unique<opt::BasicBlock>(
-      NewLabel(GetContext()->TakeNextUniqueId()));
+      NewLabel(GetUniqueID()));
 
   retval->AddInstructions(block);
 
@@ -484,7 +495,7 @@ opt::BasicBlock* RelooperBuilder::Blockify(opt::BasicBlock* lh,
 }
 
 std::uint32_t RelooperBuilder::MakeType(SpvOp op) {
-  std::uint32_t type_id = GetContext()->TakeNextUniqueId();
+  std::uint32_t type_id = GetUniqueID();
   {
     auto data_result = CreateOperandDataFromU64(type_id);
     std::vector<opt::Operand> operands = {
@@ -501,7 +512,7 @@ std::uint32_t RelooperBuilder::MakeType(SpvOp op) {
 
 std::uint32_t RelooperBuilder::MakeLabelType() {  // Create int type. VIK-TODO:
                                                   // Should be optimized away.
-  std::uint32_t int_type_id = GetContext()->TakeNextUniqueId();
+  std::uint32_t int_type_id = GetUniqueID();
   {
     auto data_result = CreateOperandDataFromU64(int_type_id);
     std::vector<opt::Operand> operands = {
@@ -517,7 +528,7 @@ std::uint32_t RelooperBuilder::MakeLabelType() {  // Create int type. VIK-TODO:
 }
 
 std::uint32_t RelooperBuilder::MakeBoolType() {
-  std::uint32_t type_id = GetContext()->TakeNextUniqueId();
+  std::uint32_t type_id = GetUniqueID();
   {
     auto data_result = CreateOperandDataFromU64(type_id);
     std::vector<opt::Operand> operands = {
@@ -534,7 +545,7 @@ std::uint32_t RelooperBuilder::MakeBoolType() {
 
 std::uint32_t RelooperBuilder::MakeLabelPtrType(std::size_t type_id) {
   // Create pointer type. VIK-TODO: Should be optimized away.
-  std::uint32_t ptr_type_id = GetContext()->TakeNextUniqueId();
+  std::uint32_t ptr_type_id = GetUniqueID();
   {
     auto data_param_0 =
         CreateOperandDataFromU64(SpvStorageClass::SpvStorageClassFunction);
@@ -558,7 +569,7 @@ std::uint32_t RelooperBuilder::MakeLabelPtrType(std::size_t type_id) {
 std::uint32_t RelooperBuilder::MakeConstant(std::size_t type_id,
                                             std::size_t value) {
   // Create constant. VIK-TODO: Should be optimized away.
-  std::uint32_t int_0_constant_id = GetContext()->TakeNextUniqueId();
+  std::uint32_t int_0_constant_id = GetUniqueID();
   {
     auto data_param_0 = CreateOperandDataFromU64(type_id);
     auto data_param_1 = CreateOperandDataFromU64(value);
@@ -589,7 +600,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeLabel() {
   // create the variable parameter
   auto data_param_0 = CreateOperandDataFromU64(ptr_type_id);
   auto data_param_1 = CreateOperandDataFromU64(SpvStorageClassFunction);
-  auto data_result = CreateOperandDataFromU64(GetContext()->TakeNextUniqueId());
+  auto data_result = CreateOperandDataFromU64(GetUniqueID());
 
   std::vector<opt::Operand> operands = {
       opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
@@ -624,7 +635,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::MakeCheckLabel(
     auto data_param_1 = CreateOperandDataFromU64(get_id);
     auto data_param_2 = CreateOperandDataFromU64(value_const_id);
     auto data_result =
-        CreateOperandDataFromU64(GetContext()->TakeNextUniqueId());
+        CreateOperandDataFromU64(GetUniqueID());
 
     std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
@@ -647,8 +658,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::makeSetLabel(
   {
     auto data_param_0 = CreateOperandDataFromU64(label_id);
     auto data_param_1 = CreateOperandDataFromU64(const_id);
-    auto data_result =
-        CreateOperandDataFromU64(GetContext()->TakeNextUniqueId());
+    auto data_result = CreateOperandDataFromU32(GetUniqueID());
 
     std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
@@ -670,8 +680,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::makeGetLabel() {
   {
     auto data_param_0 = CreateOperandDataFromU64(label_type_id);
     auto data_param_1 = CreateOperandDataFromU64(label_id);
-    auto data_result =
-        CreateOperandDataFromU64(GetContext()->TakeNextUniqueId());
+    auto data_result = CreateOperandDataFromU64(GetUniqueID());
 
     std::vector<opt::Operand> operands = {
         opt::Operand(SPV_OPERAND_TYPE_RESULT_ID, data_result),
@@ -688,8 +697,7 @@ std::unique_ptr<opt::Instruction> RelooperBuilder::makeGetLabel() {
 opt::BasicBlock* RelooperBuilder::MakeUnary(UnaryType type,
                                             opt::Operand condition) {
   // VIK-TODO: Do I need a label here?
-  std::unique_ptr<opt::Instruction> label =
-      NewLabel(GetContext()->TakeNextUniqueId());
+  std::unique_ptr<opt::Instruction> label = NewLabel(GetUniqueID());
   opt::BasicBlock* ret = new opt::BasicBlock(std::move(label));
 
   SpvOp type_op = SpvOpNop;
@@ -722,7 +730,7 @@ opt::BasicBlock* RelooperBuilder::MakeBinary(BinaryType type,
                                              opt::Operand rh_cond) {
   // VIK-TODO: Do I need a label here?
   std::unique_ptr<opt::Instruction> label =
-      NewLabel(GetContext()->TakeNextUniqueId());
+      NewLabel(GetUniqueID());
   opt::BasicBlock* ret = new opt::BasicBlock(std::move(label));
 
   SpvOp op = SpvOpNop;
@@ -747,7 +755,7 @@ std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeIf(
                                          opt::BasicBlock* true_branch,
                                          opt::BasicBlock* false_branch) {
 
-    auto unique = GetContext()->TakeNextUniqueId();
+    auto unique = GetUniqueID();
   // VIK-TODO: Do I need a label here?
   std::unique_ptr<opt::Instruction> label = NewLabel(unique);
   auto ret = std::make_unique<opt::BasicBlock>(std::move(label));
@@ -785,8 +793,7 @@ void RelooperBuilder::SetIfFalse(opt::BasicBlock* in,
 
 std::unique_ptr<opt::BasicBlock> RelooperBuilder::MakeSequence(
     opt::BasicBlock* lh, opt::BasicBlock* rh) {
-  auto label =
-      NewLabel(GetContext()->TakeNextUniqueId());  // TODO: get a new unique id
+  auto label = NewLabel(GetUniqueID());  // TODO: get a new unique id
                                                    // or reuse previous one?
   auto ret = std::make_unique<opt::BasicBlock>(std::move(label));
   ret->AddInstructions(lh);
@@ -800,6 +807,8 @@ opt::Operand RelooperBuilder::OperandFromBasicBlock(opt::BasicBlock* bb) {
                       CreateOperandDataFromU64(bb->tail()->result_id()));
 }
 
+std::uint32_t RelooperBuilder::GetUniqueID() { return relooper->GetUniqueID(); }
+
 opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
                                      opt::Function* new_func, bool in_loop) {
     auto ret = inner->Render(builder, new_func, in_loop);
@@ -809,10 +818,11 @@ opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
         HandleFollowupMultiplies(ret, this, builder, new_func, in_loop);
     // ret->AddInstructions(next->Render(builder, new_func, in_loop));
     auto ret2 =
-        builder.MakeSequence(new_ret, next->Render(builder, new_func, in_loop));
-    auto ptr = ret2.get();
-    new_func->AddBasicBlock(std::move(ret2));
-    return ptr;
+        builder.Blockify(new_ret, next->Render(builder, new_func, in_loop));
+    //auto ptr = ret2.get();
+    //new_func->AddBasicBlock(std::move(ret2));
+    //return ptr;
+    return ret2;
   }
 
   return ret;

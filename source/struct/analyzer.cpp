@@ -429,8 +429,8 @@ Shape* Analyzer::Process(BlockSet& blocks, BlockSet& initialEntries) {
             /*PrintDebug(
                 "Removing nesting by not handling large group "
                 "because small group is dead end\n",
-                0);
-            IndependentGroups.erase(LargeEntry);*/
+                0);*/
+            IndependentGroups.erase(LargeEntry);
           }
         }
       }

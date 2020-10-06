@@ -39,6 +39,8 @@ class Module;
 }  // namespace opt
 namespace struc {
 
+class Relooper;
+
 class RelooperBuilder : public spvtools::opt::InstructionBuilder {
  public:
 
@@ -54,10 +56,10 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
 
   // Creates an InstructionBuilder, all new instructions will be inserted before
   // the instruction |insert_before|.
-  RelooperBuilder(opt::IRContext* context, opt::Instruction* insert_before,
+  RelooperBuilder(Relooper* relooper, opt::IRContext* context, opt::Instruction* insert_before,
                   opt::IRContext::Analysis preserved_analyses =
                       opt::IRContext::kAnalysisNone)
-      : InstructionBuilder(context, insert_before, preserved_analyses) {}
+      : InstructionBuilder(context, insert_before, preserved_analyses), relooper(relooper) {}
 
   // Creates an InstructionBuilder, all new instructions will be inserted at the
   // end of the basic block |parent_block|.
@@ -100,13 +102,15 @@ class RelooperBuilder : public spvtools::opt::InstructionBuilder {
   // returns the result_id as operand from the lat instruction of the block.
   static opt::Operand OperandFromBasicBlock(opt::BasicBlock* bb);
 
+  std::uint32_t GetUniqueID();
+
   std::uint32_t label_type_id = std::numeric_limits<std::uint32_t>::max();
   std::uint32_t label_id = std::numeric_limits<std::uint32_t>::max();
+  Relooper* relooper;
 };
 
 struct Shape;
 struct Block;
-class Relooper;
 
 using Operand = opt::Operand;
 
@@ -395,6 +399,10 @@ class Relooper {
  public:
   Relooper(opt::IRContext* context);
   ~Relooper();
+
+  void AddUsedID(std::uint32_t id);
+  std::vector<std::uint32_t> used_ids;
+  std::uint32_t GetUniqueID();
 
   // Disables copy/move constructor/assignment operations.
   Relooper(const Relooper&) = delete;
