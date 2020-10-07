@@ -219,10 +219,10 @@ struct Triager {
       auto target = parent.StartBlock();
 
       // create triage task for next block if we haven't created a branch target for it yet (branch target means processed in this case)
-      if (parent.GetBreakTarget(parent.GetBranchTargetID(curr)) == nullptr) {
+      /*if (parent.GetBreakTarget(parent.GetBranchTargetID(curr)) == nullptr) {
       parent.stack.push_back(std::make_shared<TriageTask>(
           parent, parent.GetUnconditionalBranchBranch(curr)));
-      }
+      }*/
 
       parent.AddBranch(before, target);
     }
@@ -303,6 +303,8 @@ struct Triager {
   }
 
   std::unique_ptr<opt::Instruction> CopyInst(opt::Instruction* inst) {
+    if (inst->result_id() == 40)
+        relooper.AddUsedID(inst->result_id());
     return inst->CloneSPTR(relooper.GetContext());
   }
 
@@ -574,8 +576,9 @@ void Structurizer::Run(const std::vector<uint32_t>& binary_in,
 
   // constants
   for (auto& constant : ir_context->module()->GetConstants()) {
-    target_irContext->module()->AddType(
-        constant->CloneSPTR(target_irContext.get()));
+    auto inst = constant->CloneSPTR(target_irContext.get());
+    relooper->AddUsedID(inst->result_id());
+    target_irContext->module()->AddType(std::move(inst));
   }
 
   // capabilities

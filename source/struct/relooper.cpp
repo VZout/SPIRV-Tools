@@ -40,6 +40,11 @@ std::uint32_t Relooper::GetUniqueID() {
   while (true) {
     auto id = context->TakeNextUniqueId();
     if (std::find(used_ids.begin(), used_ids.end(), id) == used_ids.end()) {
+
+        if (id == 40) {
+        int x = 0;
+        }
+
       return id;
     }
   }
@@ -157,6 +162,7 @@ std::unique_ptr<opt::Function> Relooper::Render(opt::IRContext* new_context,
   auto def_ptr = def_inst.get();
   auto func = std::make_unique<opt::Function>(std::move(def_inst));
   old_function.ForEachParam([&](opt::Instruction* param) {
+    AddUsedID(param->result_id());
     func->AddParameter(param->CloneSPTR(new_context));
   });
 
@@ -350,7 +356,7 @@ opt::BasicBlock* Block::Render(RelooperBuilder& builder,
         if (has_fused_content) {
           curr_content = builder.Blockify(
               curr_content, fused->inner_map.find(target->id)
-                                ->second->Render(builder, nullptr, in_loop));
+                                ->second->Render(builder, new_func, in_loop));
         }
       }
       // There is nothing to show in this branch, omit the condition
@@ -434,7 +440,7 @@ Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
 // VIK-TODO: opt function is used to determine whether to add the new block to the func. This is fucked if you have recursive blocks.
 opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
                                 opt::Function* new_func, bool set_label) {
-  auto ret = std::make_unique<opt::BasicBlock>(builder.NewLabel(builder.GetUniqueID())); // VIK-TODO: Wrong label id? prefer unique
+  auto ret = std::make_unique<opt::BasicBlock>(builder.NewLabel(builder.GetUniqueID()));
   if (set_label) {
     auto label = builder.makeSetLabel(target->id);
     ret->AddInstruction(std::move(label));
@@ -448,13 +454,13 @@ opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
   }
   if (Type == FlowType::Break) {
     std::vector<opt::Operand> operands = {
-        condition,  // condition
         opt::Operand(SPV_OPERAND_TYPE_ID,
                      CreateOperandDataFromU32(target->code->id())),
     };
 
     ret->AddInstruction(std::make_unique<opt::Instruction>(builder.GetContext(), SpvOpBranch, false, false, operands));
   } else if (Type == FlowType::Continue) {
+    std::cout << "WE DO NOT HAVE A CONTINUE FLOW YET. ALSO THIS IS UNEXPECTED" << std::endl;
     // VIK-TODO: make continue shape.
   }
 
@@ -818,19 +824,48 @@ opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
         HandleFollowupMultiplies(ret, this, builder, new_func, in_loop);
     // ret->AddInstructions(next->Render(builder, new_func, in_loop));
     auto ret2 =
-        builder.Blockify(new_ret, next->Render(builder, new_func, in_loop));
-    //auto ptr = ret2.get();
-    //new_func->AddBasicBlock(std::move(ret2));
-    //return ptr;
-    return ret2;
+        builder.MakeSequence(new_ret, next->Render(builder, new_func, in_loop));
+    auto ptr = ret2.get();
+    new_func->AddBasicBlock(std::move(ret2));
+    return ptr;
+    //return ret2;
   }
 
   return ret;
 }
 
+// VIK-TODO: When is a block ready to be added...?
 opt::BasicBlock* MultipleShape::Render(RelooperBuilder& builder,
                                        opt::Function* new_func, bool in_loop) {
-  return nullptr;
+  opt::BasicBlock* first_if = nullptr;
+  opt::BasicBlock* curr_if = nullptr;
+  //std::vector<opt::BasicBlock*> finalize_stack;
+  for (auto& iter : inner_map) {
+    auto inst = builder.MakeCheckLabel(iter.first);
+    auto condition = Operand(
+        SPV_OPERAND_TYPE_ID, CreateOperandDataFromU32(inst->result_id()));
+    auto now_org = builder.MakeIf(condition, iter.second->Render(builder, new_func, in_loop));
+    auto now = now_org.get();
+    //builder.trash.push_back(std::move(now_org));
+    new_func->AddBasicBlock(std::move(now_org)); 
+    //finalize_stack.push_back(now);
+    if (!curr_if) {
+      first_if = curr_if = now;
+    } else {
+      builder.SetIfFalse(curr_if, now);
+      curr_if = now;
+    }
+  }
+
+  auto ret = first_if;
+  ret = HandleFollowupMultiplies(ret, this, builder, new_func, in_loop);
+  if (next) {
+    auto ret2 = builder.MakeSequence(ret, next->Render(builder, new_func, in_loop));
+    auto ret2_ptr = ret2.get();
+    new_func->AddBasicBlock(std::move(ret2));
+    return ret2_ptr;
+  } 
+  return ret;
 }
 
 opt::BasicBlock* LoopShape::Render(RelooperBuilder& builder,
