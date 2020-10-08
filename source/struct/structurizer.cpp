@@ -161,7 +161,7 @@ struct Triager {
           parent, parent.GetConditionalBranchTrueBranch(curr)));
     }
 
-    // wtf happens here?
+    // wtf happens here? NVM got it. weird behaviour to make sure we always parse next blocks. and we have a true, false and end block.
     void Run() override {
       if (phase == 0) {
         // end of ifTrue
@@ -187,44 +187,54 @@ struct Triager {
     }
   };
 
-  // VIK-TODO: Rename to branch target. also i added some custom logic that is now outdated I believe.
   struct BreakTask : public Task {
     static void Handle(Triager& parent, opt::Instruction* curr) {
-      // add the branch. note how if the condition is false, it is the right
-      // value there as well
       auto* before = parent.GetCurrBlock();
 
       auto target = parent.GetBreakTarget(parent.GetBranchTargetID(curr));
-      bool is_break = target != nullptr;
-      // this is fucked now
-      if (!is_break) {
-        target = parent.StartBlock();
-      }
-
       parent.AddBranch(before,
                        target);
 
-      if (is_break) {
-        parent.StopControlFlow();
-      }
+      parent.StopControlFlow();
     }
   };
 
   // Branch/Jump forward unconditionally
-    struct JumpTask : public Task {
+  struct JumpTask : public Task {
+    Block* before;
+    std::uint32_t target_id;
+
+        JumpTask(Triager& parent)
+        : Task(parent) {}
+
     static void Handle(Triager& parent, opt::Instruction* curr) {
-      // add the branch. note how if the condition is false, it is the right
-      // value there as well
-      auto* before = parent.GetCurrBlock();
-      auto target = parent.StartBlock();
+          parent.AddBranch(parent.GetCurrBlock(), parent.StartBlock());
 
-      // create triage task for next block if we haven't created a branch target for it yet (branch target means processed in this case)
-      /*if (parent.GetBreakTarget(parent.GetBranchTargetID(curr)) == nullptr) {
-      parent.stack.push_back(std::make_shared<TriageTask>(
-          parent, parent.GetUnconditionalBranchBranch(curr)));
-      }*/
+      /*auto new_task = std::make_shared<JumpTask>(parent);
+      new_task->before = parent.GetCurrBlock();
+      new_task->target_id = parent.GetBranchTargetID(curr);
+      parent.stack.push_back(new_task);*/
 
-      parent.AddBranch(before, target);
+      auto unconditional_target = parent.GetUnconditionalBranchBranch(curr);
+      if (parent.GetBreakTarget(parent.GetBranchTargetID(curr)) == nullptr) {
+        bool already_requested_triage = false;
+        for (auto task : parent.stack) {
+          auto triage_task = std::dynamic_pointer_cast<TriageTask>(task);
+          if (triage_task && triage_task->curr_bb == unconditional_target) {
+            already_requested_triage = true;
+            break;
+          }
+        }
+
+        if (!already_requested_triage) {
+          parent.stack.push_back(
+              std::make_shared<TriageTask>(parent, unconditional_target));
+        }
+      }
+    }
+
+    void Run() override { 
+        //parent.AddBranch(before, parent.GetBreakTarget(target_id));
     }
   };
 
@@ -287,7 +297,9 @@ struct Triager {
       GetCurrNativeBlock()->AddInstruction(CopyInst(curr));
     }
   }
-  void Triage(opt::BasicBlock* curr) { BlockTask::Handle(*this, curr); }
+  void Triage(opt::BasicBlock* curr) { 
+      BlockTask::Handle(*this, curr); 
+  }
 
   bool FunctionReturnsVoid() {
     auto type_id = function.DefInst().GetSingleWordOperand(0);

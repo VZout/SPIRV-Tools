@@ -152,7 +152,7 @@ struct Branch {
 
   opt::BasicBlock* Render(RelooperBuilder& builder, Block* target,
                           opt::Function* new_func,
-                           bool set_label);
+                           bool set_label, bool addtofunc);
 };
 
 // like std::set, except that begin() -> end() iterates in the
@@ -333,7 +333,7 @@ struct Block {
 
   opt::BasicBlock* Render(RelooperBuilder& builder,
                                           opt::Function* new_func,
-                                          bool in_loop);
+                          bool in_loop, bool addtofunc);
 };
 
 struct SimpleShape;

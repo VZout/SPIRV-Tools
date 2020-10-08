@@ -265,11 +265,11 @@ void Block::AddSwitchBranchTo(Block* target, std::vector<std::size_t>&& values,
 // possible fix: add to func on create. don't return smart ptr. handlemultiples would be problem. but should investigate.
 opt::BasicBlock* Block::Render(RelooperBuilder& builder,
                                                opt::Function* new_func,
-                                               bool in_loop) {
+                                               bool in_loop, bool addtofunc) {
 
   auto ret_org = std::make_unique<opt::BasicBlock>(builder.NewLabel(builder.GetUniqueID()));
   auto ret = ret_org.get();
-  if (new_func) {
+  if (addtofunc) {
     new_func->AddBasicBlock(std::move(ret_org));
   
   } else {
@@ -351,7 +351,7 @@ opt::BasicBlock* Block::Render(RelooperBuilder& builder,
       bool is_default = it == processed_branches_out.end();
       if (set_curr_label || details->Type != Branch::FlowType::Direct ||
           has_fused_content) {
-        curr_content = details->Render(builder, target, new_func, set_curr_label);
+        curr_content = details->Render(builder, target, new_func, set_curr_label, true);
 
         if (has_fused_content) {
           curr_content = builder.Blockify(
@@ -439,7 +439,8 @@ Branch::Branch(std::vector<std::size_t> switch_values, opt::BasicBlock* code)
 
 // VIK-TODO: opt function is used to determine whether to add the new block to the func. This is fucked if you have recursive blocks.
 opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
-                                opt::Function* new_func, bool set_label) {
+                                opt::Function* new_func, bool set_label,
+                                bool addtofunc) {
   auto ret = std::make_unique<opt::BasicBlock>(builder.NewLabel(builder.GetUniqueID()));
   if (set_label) {
     auto label = builder.makeSetLabel(target->id);
@@ -465,7 +466,11 @@ opt::BasicBlock* Branch::Render(RelooperBuilder& builder, Block* target,
   }
 
   auto ptr = ret.get();
-  new_func->AddBasicBlock(std::move(ret));
+  if (addtofunc) {
+    new_func->AddBasicBlock(std::move(ret));
+  } else {
+    builder.trash.push_back(std::move(ret));
+  }
   return ptr;
 }
 
@@ -817,7 +822,7 @@ std::uint32_t RelooperBuilder::GetUniqueID() { return relooper->GetUniqueID(); }
 
 opt::BasicBlock* SimpleShape::Render(RelooperBuilder& builder,
                                      opt::Function* new_func, bool in_loop) {
-    auto ret = inner->Render(builder, new_func, in_loop);
+    auto ret = inner->Render(builder, new_func, in_loop, true);
 
   if (next) {
     auto new_ret =
