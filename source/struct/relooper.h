@@ -347,7 +347,7 @@ struct Shape {
   virtual ~Shape() = default;
 
   virtual opt::BasicBlock* Render(RelooperBuilder& builder,
-                                  opt::Function* new_func, bool in_loop) = 0;
+                                  opt::Function* new_func, bool in_loop, bool addtofunc) = 0;
 
   static SimpleShape* IsSimple(Shape* it) {
     return it && it->type == Type::Simple ? (SimpleShape*)it : NULL;
@@ -373,7 +373,7 @@ struct Shape {
 struct SimpleShape : public Shape {
   SimpleShape() : Shape(Type::Simple) {}
   opt::BasicBlock* Render(RelooperBuilder& builder, opt::Function* new_func,
-                          bool in_loop) override;
+                          bool in_loop, bool addtofunc) override;
 
   Block* inner = nullptr;
 };
@@ -381,7 +381,7 @@ struct SimpleShape : public Shape {
 struct MultipleShape : public Shape {
   MultipleShape() : Shape(Type::Multiple) {}
   opt::BasicBlock* Render(RelooperBuilder& builder, opt::Function* new_func,
-                          bool in_loop) override;
+                          bool in_loop, bool addtofunc) override;
 
   IdShapeMap inner_map;  // entry block ID -> shape
 };
@@ -389,7 +389,7 @@ struct MultipleShape : public Shape {
 struct LoopShape : public Shape {
   LoopShape() : Shape(Type::Loop) {}
   opt::BasicBlock* Render(RelooperBuilder& builder, opt::Function* new_func,
-                          bool in_loop) override;
+                          bool in_loop, bool addtofunc) override;
 
   Shape* inner = nullptr;
   BlockSet entries;  // we must visit at least one of these

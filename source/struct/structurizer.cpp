@@ -90,6 +90,8 @@ struct Triager {
 
     void Run() override { 
         parent.AddBranch(parent.GetCurrBlock(), later);
+
+      //parent.GetCurrNativeBlock()->AddInstruction(std::make_unique<opt::Instruction>(parent.relooper.GetContext(), SpvOpNoLine));
         parent.SetCurrBlock(later);
     }
   };
@@ -105,7 +107,7 @@ struct Triager {
       // VIK-TODO
     }
   };
-
+   
   struct SwitchTask : Task {
     SwitchTask(Triager& parent) : Task(parent) {}
 
@@ -208,14 +210,14 @@ struct Triager {
         : Task(parent) {}
 
     static void Handle(Triager& parent, opt::Instruction* curr) {
-          parent.AddBranch(parent.GetCurrBlock(), parent.StartBlock());
+          //parent.AddBranch(parent.GetCurrBlock(), parent.StartBlock());
 
       /*auto new_task = std::make_shared<JumpTask>(parent);
       new_task->before = parent.GetCurrBlock();
       new_task->target_id = parent.GetBranchTargetID(curr);
       parent.stack.push_back(new_task);*/
 
-      auto unconditional_target = parent.GetUnconditionalBranchBranch(curr);
+      /*auto unconditional_target = parent.GetUnconditionalBranchBranch(curr);
       if (parent.GetBreakTarget(parent.GetBranchTargetID(curr)) == nullptr) {
         bool already_requested_triage = false;
         for (auto task : parent.stack) {
@@ -230,7 +232,7 @@ struct Triager {
           parent.stack.push_back(
               std::make_shared<TriageTask>(parent, unconditional_target));
         }
-      }
+      }*/
     }
 
     void Run() override { 
